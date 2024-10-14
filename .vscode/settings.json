@@ -2,6 +2,7 @@
     "files.associations": {
         "port.h": "c",
         "assert.h": "c",
-        "spi.h": "c"
+        "spi.h": "c",
+        "error_types.h": "c"
     }
 }
