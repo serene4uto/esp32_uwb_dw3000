@@ -29,7 +29,11 @@ void setup() {
     while (1);
   }
 
-  
+  delay(100);
+
+  uint32_t dev_id = dwt_readdevid();
+  Serial.print("Device ID: 0x");
+  Serial.println(dev_id, HEX);
 }
 
 void loop() {
