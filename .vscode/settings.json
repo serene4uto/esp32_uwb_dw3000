@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "port.h": "c",
+        "assert.h": "c",
+        "spi.h": "c"
+    }
+}
