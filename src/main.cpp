@@ -31,11 +31,16 @@ void setup() {
 
   delay(100);
 
+  uint32_t dev_id = dwt_readdevid();
+  Serial.print("Device ID: 0x");
+  Serial.println(dev_id, HEX);
+  
+
   // intialize DW3000
-  if (dwt_initialise(DWT_READ_OTP_PID | DWT_READ_OTP_LID | DWT_READ_OTP_BAT | DWT_READ_OTP_TMP) != DWT_SUCCESS) {
-    Serial.println("Failed to initialize DW3000");
-    while (1);
-  }
+  // if (dwt_initialise(DWT_READ_OTP_PID | DWT_READ_OTP_LID | DWT_READ_OTP_BAT | DWT_READ_OTP_TMP) != DWT_SUCCESS) {
+  //   Serial.println("Failed to initialize DW3000");
+  //   while (1);
+  // }
 }
 
 void loop() {
