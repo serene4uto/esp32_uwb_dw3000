@@ -3,6 +3,8 @@
         "port.h": "c",
         "assert.h": "c",
         "spi.h": "c",
-        "error_types.h": "c"
+        "error_types.h": "c",
+        "optional": "cpp",
+        "system_error": "cpp"
     }
 }
