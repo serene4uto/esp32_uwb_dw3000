@@ -5,6 +5,15 @@
         "spi.h": "c",
         "error_types.h": "c",
         "optional": "cpp",
-        "system_error": "cpp"
+        "system_error": "cpp",
+        "array": "cpp",
+        "deque": "cpp",
+        "string": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp",
+        "vector": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "algorithm": "cpp"
     }
 }
