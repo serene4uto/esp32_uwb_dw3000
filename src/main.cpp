@@ -1,6 +1,9 @@
 #include <Arduino.h>
 #include <SPI.h>
 
+#include "shared_functions.h"
+#include "shared_defines.h"
+#include "config_options.h"
 #include "deca_regs.h" 
 #include "deca_device_api.h"
 #include "deca_probe_interface.h"
@@ -8,49 +11,58 @@
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
-    5,               /* Channel number. */
-    DWT_PLEN_128,    /* Preamble length. Used in TX only. */
-    DWT_PAC8,        /* Preamble acquisition chunk size. Used in RX only. */
-    9,               /* TX preamble code. Used in TX only. */
-    9,               /* RX preamble code. Used in RX only. */
-    1,               /* 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type */
-    DWT_BR_6M8,      /* Data rate. */
-    DWT_PHRMODE_STD, /* PHY header mode. */
-    DWT_PHRRATE_STD, /* PHY header rate. */
-    (129 + 8 - 8),   /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
-    DWT_STS_MODE_OFF,
-    DWT_STS_LEN_64, /* STS length, see allowed values in Enum dwt_sts_lengths_e */
-    DWT_PDOA_M0     /* PDOA mode off */
+        5,               /* Channel number. */
+        DWT_PLEN_128,    /* Preamble length. Used in TX only. */
+        DWT_PAC8,        /* Preamble acquisition chunk size. Used in RX only. */
+        9,               /* TX preamble code. Used in TX only. */
+        9,               /* RX preamble code. Used in RX only. */
+        1,               /* 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type */
+        DWT_BR_6M8,      /* Data rate. */
+        DWT_PHRMODE_STD, /* PHY header mode. */
+        DWT_PHRRATE_STD, /* PHY header rate. */
+        (129 + 8 - 8),   /* SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only. */
+        DWT_STS_MODE_OFF, /* STS disabled */
+        DWT_STS_LEN_64,/* STS length see allowed values in Enum dwt_sts_lengths_e */
+        DWT_PDOA_M0      /* PDOA mode off */
 };
 
-/* The frame sent in this example is an 802.15.4e standard blink. It is a 12-byte frame composed of the following fields:
- *     - byte 0: frame type (0xC5 for a blink).
- *     - byte 1: sequence number, incremented for each new frame.
- *     - byte 2 -> 9: device ID, see NOTE 1 below.
- */
-static uint8_t tx_msg[] = {0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E'};
-/* Index to access to sequence number of the blink frame in the tx_msg array. */
-#define BLINK_FRAME_SN_IDX 1
+/* Default antenna delay values for 64 MHz PRF. See NOTE 2 below. */
+#define TX_ANT_DLY 16385
+#define RX_ANT_DLY 16385
 
-#define FRAME_LENGTH (sizeof(tx_msg) + FCS_LEN) // The real length that is going to be transmitted
+/* Frames used in the ranging process. See NOTE 3 below. */
+static uint8_t rx_poll_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0xE0, 0, 0};
+static uint8_t tx_resp_msg[] = {0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', 'A', 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+/* Length of the common part of the message (up to and including the function code, see NOTE 3 below). */
+#define ALL_MSG_COMMON_LEN 10
+/* Index to access some of the fields in the frames involved in the process. */
+#define ALL_MSG_SN_IDX 2
+#define RESP_MSG_POLL_RX_TS_IDX 10
+#define RESP_MSG_RESP_TX_TS_IDX 14
+#define RESP_MSG_TS_LEN 4
+/* Frame sequence number, incremented after each transmission. */
+static uint8_t frame_seq_nb = 0;
 
-/* Inter-frame delay period, in milliseconds. */
-#define TX_DELAY_MS 500
+/* Buffer to store received messages.
+ * Its size is adjusted to longest frame that this example code is supposed to handle. */
+#define RX_BUF_LEN 12//Must be less than FRAME_LEN_MAX_EX
+static uint8_t rx_buffer[RX_BUF_LEN];
+
+/* Hold copy of status register state here for reference so that it can be examined at a debug breakpoint. */
+static uint32_t status_reg = 0;
+
+#define POLL_RX_TO_RESP_TX_DLY_UUS 2000 
+
+/* Timestamps of frames transmission/reception. */
+static uint64_t poll_rx_ts;
+static uint64_t resp_tx_ts;
 
 /* Values for the PG_DELAY and TX_POWER registers reflect the bandwidth and power of the spectrum at the current
- * temperature. These values can be calibrated prior to taking reference measurements. */
+ * temperature. These values can be calibrated prior to taking reference measurements. See NOTE 5 below. */
 extern dwt_txconfig_t txconfig_options;
-
-bool tx_done = false;
-
-void tx_done_cb(const dwt_cb_data_t *cb_data)
-{
-  tx_done = true;
-}
 
 void setup() {
 
-  /* Platform Harware Configuration */
   Serial.begin(115200);
   while (!Serial);
 
@@ -58,11 +70,7 @@ void setup() {
   pinMode(DW_CS_PIN, OUTPUT);
   digitalWrite(DW_CS_PIN, HIGH);
 
-  pinMode(DW_RST_PIN, INPUT); // Set reset pin as INPUT
-
-  pinMode(DW_IRQ_PIN, INPUT_PULLDOWN); // or call init_dw3000_irq();
-
-  /* DW3000 Configuration */
+  init_dw3000_irq();
 
   reset_DW3000();
 
@@ -88,7 +96,6 @@ void setup() {
     Serial.println("DW IC is not in IDLE_RC state");
     while (100);
   }
-
   Serial.println("IDLE OK");
 
   if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
@@ -96,7 +103,6 @@ void setup() {
     Serial.println("INIT FAILED");
     while (100);
   }
-  
   Serial.println("INIT OK");
 
   // Enabling LEDs here for debug so that for each TX the D1 LED will flash on DW3000 red eval-shield boards.
@@ -108,87 +114,153 @@ void setup() {
     Serial.println("CONFIG FAILED");
     while (100);
   }
-
   Serial.println("CONFIG OK");
 
-  /* Configure the TX spectrum parameters (power PG delay and PG Count) */
+  /* Configure the TX spectrum parameters (power, PG delay and PG count) */
   dwt_configuretxrf(&txconfig_options);
 
-  // Set event callbacks
-  dwt_setcallbacks(
-    tx_done_cb, 
-    NULL, 
-    NULL, 
-    NULL,
-    NULL,
-    NULL
-  );
+  /* Apply default antenna delay value. See NOTE 2 below. */
+  dwt_setrxantennadelay(RX_ANT_DLY);
+  dwt_settxantennadelay(TX_ANT_DLY);
 
-  // set IRQ event
-  dwt_setinterrupt(
-    (SYS_STATUS_ALL_TX | SYS_STATUS_ALL_RX_ERR | SYS_STATUS_ALL_RX_GOOD), 
-    0, 
-    DWT_ENABLE_INT_ONLY
-  );
+  /* Next can enable TX/RX states output on GPIOs 5 and 6 to help debug, and also TX/RX LEDs
+   * Note, in real low power applications the LEDs should not be used. */
+  dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE); 
 
-  /* NOTE: Enabling Interrupts should be done after the dwt_setcallbacks() and dwt_setinterrupt() calls.
-   * Otherwise, the DW IC may trigger unknown interrupt before the application is ready to handle it.
-   * It can cause the crash of the application.
-   */
-  enable_dw3000_irq();
-
+  Serial.println("TWR RESPONDER Initialized");
 }
 
 void loop() {
-  /* Write frame data to DW IC and prepare transmission. See NOTE 3 below.*/
-  dwt_writetxdata(FRAME_LENGTH - FCS_LEN, tx_msg, 0); /* Zero offset in TX buffer. */
-
-  /* In this example since the length of the transmitted frame does not change,
-   * nor the other parameters of the dwt_writetxfctrl function, the
-   * dwt_writetxfctrl call could be outside the main while(1) loop.
-   */
-  dwt_writetxfctrl(FRAME_LENGTH, 0, 0); /* Zero offset in TX buffer, no ranging. */
-
-  /* Start transmission. */
-  dwt_starttx(DWT_START_TX_IMMEDIATE);
-  delay(10); // Sleep(TX_DELAY_MS);
-
-  /* Poll tx_done flag until the DW IC signals that the frame has been sent. 
-   * tx_done is a global flag set in the tx_done_cb callback function.
-   */
-  while (!tx_done) {
-    Serial.println("WHAT!!!\r\n");
-    delay(1);
+  /* Activate reception immediately. */
+  dwt_rxenable(DWT_START_RX_IMMEDIATE);
+  /* Poll for reception of a frame or error/timeout. See NOTE 6 below. */
+  while (!((status_reg = dwt_read32bitreg(SYS_STATUS_ID)) & (SYS_STATUS_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR)))
+  { };
+  if (status_reg & SYS_STATUS_RXFCG_BIT_MASK)
+  {
+      uint32_t frame_len;
+      /* Clear good RX frame event in the DW IC status register. */
+      dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_RXFCG_BIT_MASK);
+      /* A frame has been received, read it into the local buffer. */
+      frame_len = dwt_read32bitreg(RX_FINFO_ID) & RXFLEN_MASK;
+      if (frame_len <= sizeof(rx_buffer))
+      {
+          dwt_readrxdata(rx_buffer, frame_len, 0);
+          /* Check that the frame is a poll sent by "SS TWR initiator" example.
+           * As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
+          rx_buffer[ALL_MSG_SN_IDX] = 0;
+          if (memcmp(rx_buffer, rx_poll_msg, ALL_MSG_COMMON_LEN) == 0)
+          {
+              uint32_t resp_tx_time;
+              int ret;
+              /* Retrieve poll reception timestamp. */
+              poll_rx_ts = get_rx_timestamp_u64();
+              /* Compute response message transmission time. See NOTE 7 below. */
+              resp_tx_time = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+              dwt_setdelayedtrxtime(resp_tx_time);
+              /* Response TX timestamp is the transmission time we programmed plus the antenna delay. */
+              resp_tx_ts = (((uint64_t)(resp_tx_time & 0xFFFFFFFEUL)) << 8) + TX_ANT_DLY;
+              /* Write all timestamps in the final message. See NOTE 8 below. */
+              resp_msg_set_ts(&tx_resp_msg[RESP_MSG_POLL_RX_TS_IDX], poll_rx_ts);
+              resp_msg_set_ts(&tx_resp_msg[RESP_MSG_RESP_TX_TS_IDX], resp_tx_ts);
+              /* Write and send the response message. See NOTE 9 below. */
+              tx_resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+              dwt_writetxdata(sizeof(tx_resp_msg), tx_resp_msg, 0); /* Zero offset in TX buffer. */
+              dwt_writetxfctrl(sizeof(tx_resp_msg), 0, 1); /* Zero offset in TX buffer, ranging. */
+              ret = dwt_starttx(DWT_START_TX_DELAYED);
+              /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 10 below. */
+              if (ret == DWT_SUCCESS)
+              {
+                  /* Poll DW IC until TX frame sent event set. See NOTE 6 below. */
+                  while (!(dwt_read32bitreg(SYS_STATUS_ID) & SYS_STATUS_TXFRS_BIT_MASK))
+                  { };
+                  /* Clear TXFRS event. */
+                  dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
+                  /* Increment frame sequence number after transmission of the poll message (modulo 256). */
+                  frame_seq_nb++;
+              }
+          }
+      }
   }
-
-  tx_done = false; // Clear the flag
-
-  /* Clear TX frame sent event. */
-  dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_TXFRS_BIT_MASK);
-
-  Serial.println("TX Frame Sent");
-
-  /* Execute a delay between transmissions. */
-  delay(TX_DELAY_MS);
-
-  /* Increment the blink frame sequence number (modulo 256). */
-  tx_msg[BLINK_FRAME_SN_IDX]++;
+  else
+  {
+      /* Clear RX error events in the DW IC status register. */
+      dwt_write32bitreg(SYS_STATUS_ID, SYS_STATUS_ALL_RX_ERR);
+  }
 }
 
 /*****************************************************************************************************************************************************
  * NOTES:
  *
- * 1. The device ID is a hard coded constant in the blink to keep the example simple but for a real product every device should have a unique ID.
- *    For development purposes it is possible to generate a DW IC unique ID by combining the Lot ID & Part Number values programmed into the
- *    DW IC during its manufacture. However there is no guarantee this will not conflict with someone else�s implementation. We recommended that
- *    customers buy a block of addresses from the IEEE Registration Authority for their production items. See "EUI" in the DW IC User Manual.
- * 2. In a real application, for optimum performance within regulatory limits, it may be necessary to set TX pulse bandwidth and TX power, (using
+ * 1. The single-sided two-way ranging scheme implemented here has to be considered carefully as the accuracy of the distance measured is highly
+ *    sensitive to the clock offset error between the devices and the length of the response delay between frames. To achieve the best possible
+ *    accuracy, this response delay must be kept as low as possible. In order to do so, 6.8 Mbps data rate is used in this example and the response
+ *    delay between frames is defined as low as possible. The user is referred to User Manual for more details about the single-sided two-way ranging
+ *    process.
+ *
+ *    Initiator: |Poll TX| ..... |Resp RX|
+ *    Responder: |Poll RX| ..... |Resp TX|
+ *                   ^|P RMARKER|                    - time of Poll TX/RX
+ *                                   ^|R RMARKER|    - time of Resp TX/RX
+ *
+ *                       <--TDLY->                   - POLL_TX_TO_RESP_RX_DLY_UUS (RDLY-RLEN)
+ *                               <-RLEN->            - RESP_RX_TIMEOUT_UUS   (length of response frame)
+ *                    <----RDLY------>               - POLL_RX_TO_RESP_TX_DLY_UUS (depends on how quickly responder can turn around and reply)
+ *
+ *
+ * 2. The sum of the values is the TX to RX antenna delay, experimentally determined by a calibration process. Here we use a hard coded typical value
+ *    but, in a real application, each device should have its own antenna delay properly calibrated to get the best possible precision when performing
+ *    range measurements.
+ * 3. The frames used here are Decawave specific ranging frames, complying with the IEEE 802.15.4 standard data frame encoding. The frames are the
+ *    following:
+ *     - a poll message sent by the initiator to trigger the ranging exchange.
+ *     - a response message sent by the responder to complete the exchange and provide all information needed by the initiator to compute the
+ *       time-of-flight (distance) estimate.
+ *    The first 10 bytes of those frame are common and are composed of the following fields:
+ *     - byte 0/1: frame control (0x8841 to indicate a data frame using 16-bit addressing).
+ *     - byte 2: sequence number, incremented for each new frame.
+ *     - byte 3/4: PAN ID (0xDECA).
+ *     - byte 5/6: destination address, see NOTE 4 below.
+ *     - byte 7/8: source address, see NOTE 4 below.
+ *     - byte 9: function code (specific values to indicate which message it is in the ranging process).
+ *    The remaining bytes are specific to each message as follows:
+ *    Poll message:
+ *     - no more data
+ *    Response message:
+ *     - byte 10 -> 13: poll message reception timestamp.
+ *     - byte 14 -> 17: response message transmission timestamp.
+ *    All messages end with a 2-byte checksum automatically set by DW IC.
+ * 4. Source and destination addresses are hard coded constants in this example to keep it simple but for a real product every device should have a
+ *    unique ID. Here, 16-bit addressing is used to keep the messages as short as possible but, in an actual application, this should be done only
+ *    after an exchange of specific messages used to define those short addresses for each device participating to the ranging exchange.
+ * 5. In a real application, for optimum performance within regulatory limits, it may be necessary to set TX pulse bandwidth and TX power, (using
  *    the dwt_configuretxrf API call) to per device calibrated values saved in the target system or the DW IC OTP memory.
- * 3. dwt_writetxdata() takes the full size of tx_msg as a parameter but only copies (size - 2) bytes as the check-sum at the end of the frame is
- *    automatically appended by the DW IC. This means that our tx_msg could be two bytes shorter without losing any data (but the sizeof would not
+ * 6. We use polled mode of operation here to keep the example as simple as possible but all status events can be used to generate interrupts. Please
+ *    refer to DW IC User Manual for more details on "interrupts". It is also to be noted that STATUS register is 5 bytes long but, as the event we
+ *    use are all in the first bytes of the register, we can use the simple dwt_read32bitreg() API call to access it instead of reading the whole 5
+ *    bytes.
+ * 7. As we want to send final TX timestamp in the final message, we have to compute it in advance instead of relying on the reading of DW IC
+ *    register. Timestamps and delayed transmission time are both expressed in device time units so we just have to add the desired response delay to
+ *    response RX timestamp to get final transmission time. The delayed transmission time resolution is 512 device time units which means that the
+ *    lower 9 bits of the obtained value must be zeroed. This also allows to encode the 40-bit value in a 32-bit words by shifting the all-zero lower
+ *    8 bits.
+ * 8. In this operation, the high order byte of each 40-bit timestamps is discarded. This is acceptable as those time-stamps are not separated by
+ *    more than 2**32 device time units (which is around 67 ms) which means that the calculation of the round-trip delays (needed in the
+ *    time-of-flight computation) can be handled by a 32-bit subtraction.
+ * 9. dwt_writetxdata() takes the full size of the message as a parameter but only copies (size - 2) bytes as the check-sum at the end of the frame is
+ *    automatically appended by the DW IC. This means that our variable could be two bytes shorter without losing any data (but the sizeof would not
  *    work anymore then as we would still have to indicate the full length of the frame to dwt_writetxdata()).
- * 4. We use polled mode of operation here to keep the example as simple as possible, but the TXFRS status event can be used to generate an interrupt.
- *    Please refer to DW IC User Manual for more details on "interrupts".
- * 5. Desired configuration by user may be different to the current programmed configuration. dwt_configure is called to set desired
- *    configuration.
+ * 10. When running this example on the DW3000 platform with the POLL_RX_TO_RESP_TX_DLY response delay provided, the dwt_starttx() is always
+ *     successful. However, in cases where the delay is too short (or something else interrupts the code flow), then the dwt_starttx() might be issued
+ *     too late for the configured start time. The code below provides an example of how to handle this condition: In this case it abandons the
+ *     ranging exchange and simply goes back to awaiting another poll message. If this error handling code was not here, a late dwt_starttx() would
+ *     result in the code flow getting stuck waiting subsequent RX event that will will never come. The companion "initiator" example (ex_06a) should
+ *     timeout from awaiting the "response" and proceed to send another poll in due course to initiate another ranging exchange.
+ * 11. The user is referred to DecaRanging ARM application (distributed with EVK1000 product) for additional practical example of usage, and to the
+ *     DW IC API Guide for more details on the DW IC driver functions.
+ * 12. In this example, the DW IC is put into IDLE state after calling dwt_initialise(). This means that a fast SPI rate of up to 20 MHz can be used
+ *     thereafter.
+ * 13. Desired configuration by user may be different to the current programmed configuration. dwt_configure is called to set desired
+ *     configuration.
  ****************************************************************************************************************************************************/
+
