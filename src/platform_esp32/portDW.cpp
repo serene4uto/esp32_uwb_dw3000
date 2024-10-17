@@ -11,14 +11,16 @@
  */
 
 #include "esp_timer.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "port.h"
 
 #include "deca_device_api.h"    
 
 /**/
 extern const dw_t *pDwChip;
+
+hw_timer_t * hwtimer = NULL;
+
+portMUX_TYPE task_mux = portMUX_INITIALIZER_UNLOCKED;
 
 /****************************************************************************//**
  * Sleep, usleep and bare sw_timer based on HAL tick
@@ -162,3 +164,52 @@ error_e port_wakeup_dw3000(void) {
     //TODO: implement the function
     return _NO_ERR;
 }
+
+
+
+
+/* @fn         port_stop_all_UWB(s)
+ *
+ * @brief     stop UWB activity
+ */
+void port_stop_all_UWB(void)
+{
+    port_disable_dw_irq_and_reset(1);
+    dwt_setcallbacks(NULL, NULL, NULL, NULL, NULL, NULL);
+}
+
+
+/*
+ * @brief disable DW_IRQ, reset DW3000
+ *        and set
+ *        app.DwCanSleep = DW_CANNOT_SLEEP;
+ *        app.DwEnterSleep = DW_NOT_SLEEPING;
+ * */
+error_e port_disable_dw_irq_and_reset(int reset)
+{
+    taskENTER_CRITICAL(&task_mux);
+
+    disable_dw3000_irq(); /**< disable NVIC IRQ until we configure the device */
+
+    //this is called to reset the DW device
+    if (reset)
+    {
+        reset_DW3000();
+    }
+
+    // app.DwSpiReady = DW_SPI_READY; //SPI ready INT not used (disabled above) here we'll assume SPI is ready
+
+    taskEXIT_CRITICAL(&task_mux);
+
+    return _NO_ERR;
+}
+
+
+
+
+
+// void init_hw_timer(void)
+// {
+//     // Create a hardware timer
+//     hwtimer = timerBegin(0, 80, true); // Timer 0, prescaler 80, count up
+// }

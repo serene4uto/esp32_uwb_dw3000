@@ -19,8 +19,9 @@
 #include <Arduino.h>
 #include <SPI.h>
 
+#include "app.h"
 #include "deca_spi.h"
-#include "error_types.h"
+
 
 #define DW_SPI_FAST_BAUDRATE 8000000L
 #define DW_SPI_SLOW_BAUDRATE 2000000L
@@ -35,6 +36,7 @@
  extern "C" {
 #endif
 
+#define assert_param(expr) ((void)0U)
 
 //-----------------------------------------------------------------------------
 //    DWxxx description
@@ -80,8 +82,12 @@ bool check_timer(volatile uint32_t timestamp, uint32_t time);
 void dwp_usleep(uint32_t usec);
 void dwp_Sleep( volatile uint32_t );
 
+error_e port_disable_dw_irq_and_reset(int reset);
 
 
+extern hw_timer_t * hwtimer;
+
+extern portMUX_TYPE task_mux;
 
 #ifdef __cplusplus
 }
