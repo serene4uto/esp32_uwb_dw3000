@@ -1,26 +1,30 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-#include "shared_functions.h"
-#include "shared_defines.h"
-#include "config_options.h"
+
 #include "deca_regs.h" 
 #include "deca_device_api.h"
 #include "deca_probe_interface.h"
 #include "port.h"
+
+hw_timer_t * timer = NULL;
 
 void setup() {
 
   Serial.begin(115200);
   while (!Serial);
 
+  // spi
   SPI.begin();
+
+  // gpio
   pinMode(DW_CS_PIN, OUTPUT);
   digitalWrite(DW_CS_PIN, HIGH);
-
   init_dw3000_irq();
-
   reset_DW3000();
+
+  // timer
+  timer = timerBegin(0, 80, true); // 80 prescaler, 1 tick = 1us
 
   // Initialize DW3000
   if (dwt_probe((struct dwt_probe_s *)&dw3000_probe_interf) != DWT_SUCCESS) {
@@ -53,9 +57,17 @@ void setup() {
   }
   Serial.println("INIT OK");
 
+
+  // hardware timer
+
+
+
+
+  // task
+
   
 }
 
 void loop() {
-
+  delay(10);
 }
