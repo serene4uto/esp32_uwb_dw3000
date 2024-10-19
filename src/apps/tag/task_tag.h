@@ -24,7 +24,6 @@ void tag_helper(void const *argument);
 void tag_terminate(void);
 
 
-// extern portMUX_TYPE tagTaskMux;
 
 #ifdef __cplusplus
 }

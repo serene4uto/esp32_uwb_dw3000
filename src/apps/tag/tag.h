@@ -23,10 +23,6 @@
 
 #define TWR_TAG_BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */
 
-// #define TWR_TAG_EUI64                      (0x0A0A0A0A0A0A0000) /* Tag's EUI64 */
-#define TWR_TAG_EUI64                      (0x0A0A0A0A0A0A0001) /* Tag's EUI64 */
-
-
 
 /* Rx Events circular buffer.
  * 0x02, 0x04, 0x08, 0x10, etc.
@@ -40,7 +36,7 @@
 // Struct & Typedefs
 
 /* RxPckt */
-struct rx_pckt_t_s
+struct tag_rx_pckt_s
 {
   int16_t               rxDataLen;  
 
@@ -54,7 +50,7 @@ struct rx_pckt_t_s
 
 };
 
-typedef struct rx_pckt_t_s rx_pckt_t_t;
+typedef struct tag_rx_pckt_s tag_rx_pckt_t;
 
 /* This structure holds application parameters:
  * eui64
@@ -73,16 +69,8 @@ struct tag_info_s {
     uint64_t eui64;
   };
 
-  /* circular Buffer of received Rx packets :
-   * uses in transferring of the data from ISR to APP level.
-   * */
-  // struct {
-  //     rx_pckt_t_t   buf[EVENT_BUF_TAG_SIZE];
-  //     uint16_t      head;
-  //     uint16_t      tail;
-  // } rxPcktBuf;
-
-  QueueHandle_t rxPcktQueue = NULL;
+  QueueHandle_t rxPcktQueue = NULL; // circular Buffer of received Rx packets
+  
 
   /* ranging variables */
   struct {

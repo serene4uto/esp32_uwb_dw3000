@@ -12,6 +12,30 @@
 #include "deca_device_api.h"
 #include "tag_list.h"
 
+/* Hardcoded EUI64s for demo */
+/* ANCHOR EUI64s */ 
+// #define TWR_ANCHOR_MASTER_EUI64             {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x08, 0x0F} /* Anchor Master's EUI64 */
+// #define TWR_ANCHOR_DEV1_EUI64               {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x08, 0x01} /* Anchor Device 1's EUI64 */
+// #define TWR_ANCHOR_DEV2_EUI64               {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x08, 0x02} /* Anchor Device 2's EUI64 */
+// #define TWR_ANCHOR_DEV3_EUI64               {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x08, 0x03} /* Anchor Device 3's EUI64 */
+// #define TWR_ANCHOR_DEV4_EUI64               {0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x08, 0x04} /* Anchor Device 4's EUI64 */
+
+/* Tag EUI64 */
+// #define TWR_TAG_DEV1_EUI64                  {0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x07, 0x01} /* Tag Device 1's EUI64 */
+// #define TWR_TAG_DEV2_EUI64                  {0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x0a, 0x07, 0x02} /* Tag Device 2's EUI64 */
+
+
+#define TWR_ANCHOR_MASTER_EUI16             0x080F /* Anchor Master's EUI16 */
+#define TWR_ANCHOR_DEV1_EUI16               0x0801 /* Anchor Device 1's EUI16 */
+#define TWR_ANCHOR_DEV2_EUI16               0x0802 /* Anchor Device 2's EUI16 */
+#define TWR_ANCHOR_DEV3_EUI16               0x0803 /* Anchor Device 3's EUI16 */
+#define TWR_ANCHOR_DEV4_EUI16               0x0804 /* Anchor Device 4's EUI16 */
+
+
+#define TWR_TAG_DEV1_EUI16                  0x0701 /* Tag Device 1's EUI16 */
+#define TWR_TAG_DEV2_EUI16                  0x0702 /* Tag Device 2's EUI16 */
+
+
 /* UWB config */
 #define DEFAULT_CHANNEL             9
 #define DEFAULT_TXPREAMBLENGTH      DWT_PLEN_64
@@ -81,11 +105,13 @@
         .xtal_trim  = DEFAULT_XTAL_TRIM, \
     }, \
     \
-    /* Initialize knownTagList to zero or as needed */ \
-    .known_tag_list = { \
-        {0, {0x00, 0x00}, {0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x00, 0}}, \
-        {1, {0x00, 0x01}, {0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x00, 1}}, \
-    },\
+    /* Initialize knownTagList */ \
+    .known_tag_list = {0},\
+    .known_tag_list_size = 0, \
+    \
+    /* Initialize knownAnchorList */ \
+    .known_anchor_list = {0},\
+    .known_anchor_list_size = 0, \
 }
 
 
@@ -112,6 +138,13 @@ typedef struct runtime_params_s
 } __attribute__((__packed__)) runtime_params_t;
 
 
+typedef union 
+{
+    uint8_t     euiShort[2];
+    uint16_t    eui16;
+} __attribute__((__packed__)) dev_eui16_t;
+
+
 /**
  * @brief Structure holding the configurable parameters of the application.
  *
@@ -122,8 +155,13 @@ typedef struct param_block_s
 {
     dwt_config_t        dwt_config;                    /**< Standard Decawave driver configuration. */
     runtime_params_t    runtime_params;                /**< Runtime parameters for dynamic configuration. */
-    tag_addr_slot_t     known_tag_list[MAX_KNOWN_TAG_LIST_SIZE]; /**< Array of known tag addresses and slots. */
-    
+
+
+    dev_eui16_t known_tag_list[MAX_KNOWN_TAG_LIST_SIZE]; /**< Array of known tag addresses and slots. */
+    uint8_t             known_tag_list_size;            /**< Number of known tags in the list. */
+
+    dev_eui16_t known_anchor_list[4]; /**< Array of known anchor addresses and slots. */
+    uint8_t             known_anchor_list_size;         /**< Number of known anchors in the list. */
 
 } __attribute__((__packed__)) param_block_t;
 

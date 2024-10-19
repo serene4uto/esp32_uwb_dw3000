@@ -43,7 +43,6 @@ typedef struct
 tag_addr_slot_t;
 
 
-
 #ifdef __cplusplus
 }
 #endif

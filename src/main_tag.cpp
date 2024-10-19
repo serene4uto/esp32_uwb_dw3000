@@ -32,8 +32,7 @@ void main_tag()
 
   memset(&app, 0, sizeof(app));
 
-  app.pConfig = (param_block_t *)&FConfig;
-  
+  app.pConfig = (param_block_t *)&FConfig;  
 
   reset_DW3000();
 

@@ -3,6 +3,6 @@
 
 
 extern void main_tag(void);
-extern void main_anchor_m(void);
+extern void main_anchor(void);
 
 #endif // __MAIN_H__

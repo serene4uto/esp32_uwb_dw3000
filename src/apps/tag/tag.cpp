@@ -129,8 +129,16 @@ error_e tag_process_init(void)
 
     if(pTagInfo->rxPcktQueue == NULL)
     {
-        pTagInfo->rxPcktQueue = xQueueCreate(EVENT_BUF_TAG_SIZE, sizeof(rx_pckt_t_t));
+        pTagInfo->rxPcktQueue = xQueueCreate(EVENT_BUF_TAG_SIZE, sizeof(tag_rx_pckt_t));
     }
+
+
+    /* Hard code the known anchors for the demo */
+    app.pConfig->known_anchor_list[0].eui16 = TWR_ANCHOR_MASTER_EUI16;
+    app.pConfig->known_anchor_list[1].eui16 = TWR_ANCHOR_DEV1_EUI16;
+    app.pConfig->known_anchor_list[2].eui16 = TWR_ANCHOR_DEV2_EUI16;
+    app.pConfig->known_anchor_list[3].eui16 = TWR_ANCHOR_DEV3_EUI16;
+    app.pConfig->known_anchor_list_size = 4;
 
 
     /* Tag will receive its configuration, such as

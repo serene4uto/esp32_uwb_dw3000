@@ -8,9 +8,9 @@
 
 const param_block_t FConfig = DEFAULT_CONFIG;
 
-void main_anchor_m()
+void main_anchor()
 {
-      // serial
+  // serial
   Serial.begin(115200);
   while (!Serial);
 
