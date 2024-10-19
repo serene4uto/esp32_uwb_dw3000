@@ -11,6 +11,7 @@
 
 
 #define DEVICE_ROLE    DEV_TAG
+// #define DEVICE_ROLE    DEV_ANCHOR_MASTER
 
 app_t app; // global application variables
 
@@ -18,6 +19,8 @@ void setup() {
 
 #if(DEVICE_ROLE == DEV_TAG)
   main_tag();
+#elif(DEVICE_ROLE == DEV_ANCHOR_MASTER)
+  main_anchor_m();
 #endif
 
 }

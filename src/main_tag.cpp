@@ -6,8 +6,13 @@
 #include "deca_probe_interface.h"
 #include "port.h"
 
+#include "task_tag.h"
 
-void main_tag() {
+const param_block_t FConfig = DEFAULT_CONFIG;
+
+
+void main_tag() 
+{
 
   // serial
   Serial.begin(115200);
@@ -27,6 +32,9 @@ void main_tag() {
 
   memset(&app, 0, sizeof(app));
 
+  app.pConfig = (param_block_t *)&FConfig;
+  
+
   reset_DW3000();
 
   // Initialize DW3000
@@ -37,34 +45,34 @@ void main_tag() {
 
   delay(100);
 
-  while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding
-  {
-    Serial.println("DW IC is not in IDLE_RC state");
-    while (100);
-  }
-
   dwt_softreset();
   delay(200);
 
   while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding
   {
     Serial.println("DW IC is not in IDLE_RC state");
-    while (100);
+    while (1);
   }
   Serial.println("IDLE OK");
 
   if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
   {
     Serial.println("INIT FAILED");
-    while (100);
+    while (1);
   }
   Serial.println("INIT OK");
 
+  
+  tag_terminate();
 
+  tag_helper(NULL);
 
 
   while (1) {
 
-    delay(10);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 }
+
+
+

@@ -16,6 +16,7 @@
         "initializer_list": "cpp",
         "algorithm": "cpp",
         "deca_spi.h": "c",
-        "app.h": "c"
+        "app.h": "c",
+        "task_tag.h": "c"
     }
 }

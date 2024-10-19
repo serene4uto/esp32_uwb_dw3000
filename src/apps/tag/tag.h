@@ -21,12 +21,11 @@
  extern "C" {
 #endif
 
+#define TWR_TAG_BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */
 
-#define DW_TAG_NOT_SLEEPING        (0)
+// #define TWR_TAG_EUI64                      (0x0A0A0A0A0A0A0000) /* Tag's EUI64 */
+#define TWR_TAG_EUI64                      (0x0A0A0A0A0A0A0001) /* Tag's EUI64 */
 
-#define BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */
-
-#define DWT_DIAGNOSTIC_LOG_REV_5       (5)
 
 
 /* Rx Events circular buffer.
@@ -40,29 +39,18 @@
 //-----------------------------------------------------------------------------
 // Struct & Typedefs
 
-
-
-
 /* RxPckt */
 struct rx_pckt_t_s
 {
-    int16_t        rxDataLen;
+  int16_t               rxDataLen;  
 
-    union {
-      std_msg_t           stdMsg;
-      std_msg_ss_t        ssMsg;
-      std_msg_ls_t        lsMsg;
-      twr_msg_t           twrMsg;
-      blink_msg_t         blinkMsg;
-      rng_cfg_msg_t       rngCfgMsg;
-      rng_cfg_upd_msg_t   rngCfgUpdMsg;
-      resp_pdoa_msg_t      respExtMsg;
-    } msg;
-
-    uint8_t     timeStamp[TS_40B_SIZE];   /* Full TimeStamp */
-    uint32_t    rtcTimeStamp;             /* MCU RTC timestamp */
-    uint16_t    firstPath;                /* First path (raw 10.6) */
-    int16_t     clock_offset;
+  union {
+    std_msg_t           stdMsg;
+    std_msg_ss_t        ssMsg;
+    std_msg_ls_t        lsMsg;
+    twr_msg_t           twrMsg;
+    blink_msg_t         blinkMsg;
+  } msg;  
 
 };
 
@@ -78,48 +66,69 @@ typedef struct rx_pckt_t_s rx_pckt_t_t;
  *
  * */
 struct tag_info_s {
-    /* Unique long Address, used at the discovery phase before Range Init reception */
-    union {
-        uint8_t  euiLong[8];
-        uint64_t eui64;
-    };
 
-    /* circular Buffer of received Rx packets :
-     * uses in transferring of the data from ISR to APP level.
-     * */
-    struct {
-        rx_pckt_t_t   buf[EVENT_BUF_TAG_SIZE];
-        uint16_t    head;
-        uint16_t    tail;
-    } rxPcktBuf;
+  /* Unique long Address, used at the discovery phase before Range Init reception */
+  union {
+    uint8_t  euiLong[8];
+    uint64_t eui64;
+  };
+
+  /* circular Buffer of received Rx packets :
+   * uses in transferring of the data from ISR to APP level.
+   * */
+  // struct {
+  //     rx_pckt_t_t   buf[EVENT_BUF_TAG_SIZE];
+  //     uint16_t      head;
+  //     uint16_t      tail;
+  // } rxPcktBuf;
+
+  QueueHandle_t rxPcktQueue = NULL;
+
+  /* ranging variables */
+  struct {
+      /* MAC sequence number, increases on every tx_start */
+      uint8_t        seqNum;
+
+      /* Application DW_TX_IRQ source indicator */
+      tx_states_e     txState;
+  };
+
+  /* Environment - configured from Range init structure.
+   * slotCorr_us is used to adjust slot every reception as part of Response
+   */
+  struct env_params_s
+  {
+  } env;
 
 
-    /* Environment - configured from Range init structure.
-     * slotCorr_us is used to adjust slot every reception as part of Response
-     */
-    struct    env
-    {
+  /* Tag's crystal clock offset trimming */
+  int16_t     clkOffset_pphm;     //
+  uint8_t     xtaltrim;           //Tag crystal trim value
 
-    } env;
+  uint16_t    lateTX;             //used for Debug to count any lateTX
 
-
-    enum
-    {
-        BLINKING_MODE,
-        RANGING_MODE
-    } mode;
-
-
+  enum
+  {
+    BLINKING_MODE,
+    RANGING_MODE
+  } mode;
+  
 };
 
+typedef struct tag_info_s tag_info_t;
+
+
+//-----------------------------------------------------------------------------
+// exported functions prototypes
+
+/* initiator (tag) */
+tag_info_t * getTagInfoPtr(void);
 
 error_e tag_process_init(void);
-// void    tag_process_start(void);
-// void    tag_process_terminate(void);
+void    tag_process_start(void);
+void    tag_process_terminate(void);
 
-
-
-
+error_e tag_send_blink(tag_info_t *p);
 
 #ifdef __cplusplus
 }

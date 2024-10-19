@@ -38,6 +38,24 @@
 
 #define assert_param(expr) ((void)0U)
 
+
+//TODO: print error message
+#define TERMINATE_STD_TASK(x) \
+do { \
+    if (x.Handle) { \
+        xSemaphoreTake(x.MutexId, portMAX_DELAY); \
+        taskENTER_CRITICAL(&task_mux); \
+        xSemaphoreGive(x.MutexId); \
+        vTaskDelete(x.Handle); \
+        vSemaphoreDelete(x.MutexId); \
+        x.Handle = NULL; \
+        x.MutexId = NULL; \
+        taskEXIT_CRITICAL(&task_mux); \
+    } \
+} while (0)
+
+
+
 //-----------------------------------------------------------------------------
 //    DWxxx description
 
@@ -83,6 +101,12 @@ void dwp_usleep(uint32_t usec);
 void dwp_Sleep( volatile uint32_t );
 
 error_e port_disable_dw_irq_and_reset(int reset);
+
+
+// void port_init_hwtimer(void);
+// void port_deinit_hwtimer(void)
+// void port_enable_hwtimer(void);
+// void port_enable_hwtimer(void);
 
 
 extern hw_timer_t * hwtimer;

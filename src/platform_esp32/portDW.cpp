@@ -22,6 +22,8 @@ hw_timer_t * hwtimer = NULL;
 
 portMUX_TYPE task_mux = portMUX_INITIALIZER_UNLOCKED;
 
+bool isDw3000InterruptAttached = false;
+
 /****************************************************************************//**
  * Sleep, usleep and bare sw_timer based on HAL tick
  */
@@ -93,13 +95,20 @@ void enable_dw3000_irq(void)
     const dw_t *pDw = pDwChip;
 
     attachInterrupt(pDw->irqPin, dwt_isr, RISING);
+
+    isDw3000InterruptAttached = true;
 }
 
 void disable_dw3000_irq(void)
 {
     const dw_t *pDw = pDwChip;
 
-    detachInterrupt(pDw->irqPin);
+    // check if the interrupt is attached
+    if (isDw3000InterruptAttached)
+    {
+        detachInterrupt(pDw->irqPin);
+        isDw3000InterruptAttached = false;
+    }
 }
 
 /*!
@@ -206,10 +215,39 @@ error_e port_disable_dw_irq_and_reset(int reset)
 
 
 
-
-
-// void init_hw_timer(void)
+// void port_init_hwtimer(void)
 // {
-//     // Create a hardware timer
-//     hwtimer = timerBegin(0, 80, true); // Timer 0, prescaler 80, count up
+//     if (hwtimer != NULL)
+//     {
+//         return;
+//     }
+//     hwtimer = timerBegin(0, 80, true); // 80 MHz, 1 us per tick
+// }
+
+// void port_deinit_hwtimer(void)
+// {
+//     if (hwtimer == NULL)
+//     {
+//         return;
+//     }
+//     timerEnd(hwtimer);
+//     hwtimer = NULL;
+// }
+
+// void port_enable_hwtimer(void)
+// {
+//     if (hwtimer == NULL)
+//     {
+//         return;
+//     }
+//     timerAlarmEnable(hwtimer);
+// }
+
+// void port_disable_hwtimer(void)
+// {
+//     if (hwtimer == NULL)
+//     {
+//         return;
+//     }
+//     timerDetachInterrupt(hwtimer);
 // }

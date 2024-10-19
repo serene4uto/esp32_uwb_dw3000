@@ -16,6 +16,8 @@
 
 #include "error_types.h"
 #include "task_tag.h"
+#include "default_config.h"
+
 
 #ifdef __cplusplus
  extern "C" {
@@ -31,39 +33,32 @@ typedef enum {
     Twr_Tx_Final_Sent,          //tag sends final
 }tx_states_e;
 
-/* Application tasks handles & corresponded signals structure */
-struct task_signal_s
+/**
+ * @brief Structure representing the context of a task.
+ *
+ * This structure encapsulates all necessary information required to manage and synchronize a task.
+ * It includes the task's handle, a mutex for synchronization, and a pointer to any additional
+ * parameters that the task might need.
+ */
+struct task_context_s
 {
-    // osThreadId Handle;           /* Tasks handler */
     TaskHandle_t Handle;            /* Tasks handler */
-    // osMutexId  MutexId;          /* Tasks mutex */
     SemaphoreHandle_t MutexId;      /* Tasks mutex */
-    int32_t    Signal;              /* Tasks signal */
     void        *arg;               /* additional parameters for the Task */
 };
 
-typedef struct task_signal_s    task_signal_t;
-
-/* System mode of operation. used to
- *
- * 1. indicate in which mode of operation system is running
- * 2. configure the access rights to command handler in control mode
- * */
-typedef enum {
-    mANY = 0,   /**< Used only for Commands: indicates the command can be executed in any modes below */
-    mIDLE,      /**< IDLE mode */
-    mPNODE,     /**< PDOA Slotted TWR (Node active) mode */
-    mPTAG,      /**< PDoA Slotted TWR (Tag active ) mode */
-    mMASK      = 0xFFFF
-}mode_e;
-
-
+typedef struct task_context_s task_context_t;
 
 
 /* Application's global parameters structure */
 struct app_s
 {
+    param_block_t *pConfig;       /**< Current configuration */
 
+    task_context_t blinkTask;    /* Blink task */
+    task_context_t pollTask;     /* Poll task */
+    task_context_t rxTask;       /* Rx task */
+    
     void (* hw_time_cb)(void); // pointer to the hardware timer callback
 };
 
