@@ -157,10 +157,10 @@ typedef struct param_block_s
     runtime_params_t    runtime_params;                /**< Runtime parameters for dynamic configuration. */
 
 
-    dev_eui16_t known_tag_list[MAX_KNOWN_TAG_LIST_SIZE]; /**< Array of known tag addresses and slots. */
+    dev_eui16_t         known_tag_list[MAX_KNOWN_TAG_LIST_SIZE]; /**< Array of known tag addresses and slots. */
     uint8_t             known_tag_list_size;            /**< Number of known tags in the list. */
 
-    dev_eui16_t known_anchor_list[4]; /**< Array of known anchor addresses and slots. */
+    dev_eui16_t         known_anchor_list[4]; /**< Array of known anchor addresses and slots. */
     uint8_t             known_anchor_list_size;         /**< Number of known anchors in the list. */
 
 } __attribute__((__packed__)) param_block_t;

@@ -15,8 +15,8 @@
 #include "common_n.h"
 #include "util.h"
 
-#define TWR_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
-#define TWR_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
+#define TWR_TAG_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
+#define TWR_TAG_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
 
 //-----------------------------------------------------------------------------
 
@@ -103,14 +103,7 @@ tag_spi_rdy_cb(const dwt_cb_data_t *rxd)
  *     This MUST be executed in protected mode.
  *
  *     !!!! It is assumed DW IC is reset prior to calling this function !!!!!
- *
- *     This will setup the process of:
- *     1. broadcast blink / wait for Ranging Config response;
- *     2. receive setup parameters from Ranging Config;
- *     3. if version of Ranging Config is not compatible, keep blinking;
- *     4. otherwise setup slot, new panID, framefiltering, address, TWR timings;
- *     6. switch off blinking timer and switch on precise WUP timer;
- *     5. range to the Node addr from MAC of Ranging Config
+ * 
  * */
 error_e tag_process_init(void)
 {
@@ -127,9 +120,9 @@ error_e tag_process_init(void)
      * */
     memset(pTagInfo, 0 , sizeof(tag_info_t));
 
-    if(pTagInfo->rxPcktQueue == NULL)
+    if(pTagInfo->rx_pkt_queue == NULL)
     {
-        pTagInfo->rxPcktQueue = xQueueCreate(EVENT_BUF_TAG_SIZE, sizeof(tag_rx_pckt_t));
+        pTagInfo->rx_pkt_queue = xQueueCreate(EVENT_BUF_TAG_SIZE, sizeof(tag_rx_pckt_t));
     }
 
 
@@ -141,26 +134,14 @@ error_e tag_process_init(void)
     app.pConfig->known_anchor_list_size = 4;
 
 
-    /* Tag will receive its configuration, such as
-     * panID, tagAddr, node0Addr and TWR delays:
-     * pollTx2FinalTxDelay_us and response rx delay from Ranging Config message.
-     *
-     * But the reception timeouts calculated based on known length of
-     * Ranging Config and Response packets.
-     * */
-
-    //pre-calculate all possible two-way ranging frame timings ???
-
-
-
     /* dwt_xx calls in app level Must be in protected mode (DW3000 IRQ disabled) */
     disable_dw3000_irq();
 
-    TWR_ENTER_CRITICAL();
+    TWR_TAG_ENTER_CRITICAL();
 
     if (dwt_initialise(DWT_DW_INIT | DWT_READ_OTP_PID | DWT_READ_OTP_LID) != DWT_SUCCESS) /**< set callbacks to NULL inside dwt_initialise*/
     {
-        TWR_EXIT_CRITICAL();
+        TWR_TAG_EXIT_CRITICAL();
         Serial.println("INIT FAILED");
         return (_ERR_INIT);   // device initialise has failed
     }
@@ -170,7 +151,7 @@ error_e tag_process_init(void)
     uint32_t dev_id = dwt_readdevid();
 
     if (dev_id != DWT_C0_DEV_ID) {
-        TWR_EXIT_CRITICAL();
+        TWR_TAG_EXIT_CRITICAL();
         Serial.println("Device ID is not correct");
         return (_ERR_INIT);
     }
@@ -179,7 +160,7 @@ error_e tag_process_init(void)
     rxtx_configure_t p;
     p.pdwCfg      = &app.pConfig->dwt_config;
     p.frameFilter = DWT_FF_DISABLE;    //DWT_FF_ENABLE_802_15_4
-    p.frameFilterMode   = (DWT_FF_DISABLE);
+    p.frameFilterMode   = (DWT_FF_DATA_EN | DWT_FF_ACK_EN); //FIXME
     p.txAntDelay  = app.pConfig->runtime_params.ant_tx_a;
     p.rxAntDelay  = app.pConfig->runtime_params.ant_rx_a;
     p.panId       = 0x5555;//PanID : does not matter : DWT_FF_NOTYPE_EN : will be reconfigured on reception of RI message
@@ -230,9 +211,9 @@ error_e tag_process_init(void)
         pTagInfo->xtaltrim = dwt_getxtaltrim();
     }
 
-    pTagInfo->mode = tag_info_s::BLINKING_MODE; // start with blinking mode
+    pTagInfo->mode = tag_info_s::WAIT_FOR_TURN_MODE; // waiting for the turn
 
-    TWR_EXIT_CRITICAL();
+    TWR_TAG_EXIT_CRITICAL();
     
     return (_NO_ERR);
 }
@@ -277,36 +258,7 @@ void tag_process_terminate(void)
 error_e tag_send_blink(tag_info_t *p)
 {
     error_e       ret;
-    tx_pckt_t     txPckt;
 
-    memset(&txPckt, 0, sizeof(txPckt));
-
-    blink_msg_t *pTxMsg = &txPckt.msg.blinkMsg;
-
-    // TWR : PHASE : Initiator Sends Blink to Responder
-    txPckt.psduLen              = sizeof(blink_msg_t);
-    txPckt.delayedTxTimeH_sy    = 0;
-    txPckt.txFlag               = ( DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED );
-    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcDelay_us);  //Ranging Config: activate receiver this time SY after Blink Tx
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcRxTo_us);   //Ranging Config: receiver will be active for this time, SY
-
-    pTxMsg->frameCtrl[0]        = Head_Msg_BLINK;
-    pTxMsg->seqNum              = p->seqNum;
-    memcpy(&pTxMsg->tagID, &p->eui64, sizeof(pTxMsg->tagID));
-
-    p->seqNum++;
-    p->txState                  = Twr_Tx_Blink_Sent;
-
-    TWR_ENTER_CRITICAL();
-
-    ret = tx_start(&txPckt);
-
-    TWR_EXIT_CRITICAL();
-
-    if( ret != _NO_ERR)
-    {
-        p->lateTX++;
-    }
 
     return ret;
 }
@@ -317,14 +269,14 @@ static void IRAM_ATTR tag_hw_timer_cb() {
     tag_info_t *pTagInfo = getTagInfoPtr();
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    if (pTagInfo->mode == tag_info_s::BLINKING_MODE) 
-    {
-        if(app.blinkTask.Handle)
-        {
-           vTaskNotifyGiveFromISR(app.blinkTask.Handle, &xHigherPriorityTaskWoken);
-        }
+    // if (pTagInfo->mode == tag_info_s::BLINKING_MODE) 
+    // {
+    //     if(app.blinkTask.Handle)
+    //     {
+    //        vTaskNotifyGiveFromISR(app.blinkTask.Handle, &xHigherPriorityTaskWoken);
+    //     }
 
-    }
+    // }
 
 
     // Optionally, yield if the task has higher priority

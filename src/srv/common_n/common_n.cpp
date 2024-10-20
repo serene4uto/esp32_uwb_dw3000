@@ -15,70 +15,6 @@
 #include "port.h"
 
 /*
- * @brief This fn() sets the STS_ND (SP3) and loads the STS key and IV
- *
- *  dwt_configure(pdwCfg) should be executed thereafter
- * */
-static void
-set_cfg_sp3(dwt_config_t      *pdwCfg,
-            dwt_sts_cp_key_t *key,
-            dwt_sts_cp_iv_t     *iv)
-{
-    pdwCfg->stsMode = DWT_STS_MODE_ND;
-    pdwCfg->sfdType = 3;
-
-    /*
-     * Set STS encryption key and IV (nonce)
-     */
-    dwt_configurestskey(key);                   //this can be done only 1 time in the application
-    dwt_configurestsiv(iv);                     //the IV should be synchronised
-    dwt_configurestsloadiv();
-    //END STS
-}
-
-/*
- * @brief This fn() sets the STS1 (SP1) and loads the STS key and IV
- *
- *  dwt_configure(pdwCfg) should be executed thereafter
- * */
-static void
-set_cfg_sp1(dwt_config_t    *pdwCfg,
-            dwt_sts_cp_key_t *key,
-            dwt_sts_cp_iv_t  *iv)
-{
-    pdwCfg->stsMode = DWT_STS_MODE_1;
-    pdwCfg->sfdType = 3;
-
-    /*
-     * Set STS encryption key and IV (nonce)
-     */
-    dwt_configurestskey(key);                   //this can be done only 1 time in the application
-    dwt_configurestsiv(iv);                     //the IV should be synchronised
-    dwt_configurestsloadiv();
-    //END STS
-}
-
-
-/*
- * @brief This fn() revert back SP0 frame mode
- *        dwt_configure(pdwCfg) should be executed thereafter
- * */
-static void
-set_cfg_sp0A(dwt_config_t *pdwCfg)
-{
-    pdwCfg->stsMode = DWT_STS_MODE_OFF;
-    pdwCfg->sfdType = 0;
-}
-
-
-static void
-set_cfg_sp0Z(dwt_config_t *pdwCfg)
-{
-    pdwCfg->stsMode = DWT_STS_MODE_OFF;
-    pdwCfg->sfdType = 3;
-}
-
-/*
  * @brief   configure tag/node application: frame filtering, PANID, address, antenna delays
  *
  *
@@ -138,7 +74,7 @@ tx_start(tx_pckt_t * pTxPckt)
 
     if(pTxPckt->psduLen)
     {
-        dwt_writetxdata(pTxPckt->psduLen, (uint8_t *) &pTxPckt->msg.stdMsg, 0);
+        dwt_writetxdata(pTxPckt->psduLen, (uint8_t *) &pTxPckt->msg.raw, 0);
         dwt_writetxfctrl(pTxPckt->psduLen, 0, 1);
     }
 

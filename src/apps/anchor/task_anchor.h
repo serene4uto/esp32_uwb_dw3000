@@ -10,7 +10,7 @@
 
 #include "app.h"
 
-void acnhor_helper(void const *argument);
+void anchor_helper(void const *argument);
 void anchor_terminate(void);
 
 extern portMUX_TYPE anchorTaskMux;

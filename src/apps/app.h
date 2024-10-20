@@ -25,12 +25,8 @@
 
 
 typedef enum {
-    Twr_Tx_Done,
-    Twr_Tx_Blink_Sent,          //tag sends blink
-    Twr_Tx_Ranging_Config_Sent, //node sends range init
-    Twr_Tx_Poll_Sent,           //tag sends poll
-    Twr_Tx_Resp_Sent,           //node sends response
-    Twr_Tx_Final_Sent,          //tag sends final
+    TWR_TX_DONE = 0x00,
+    TWR_TX_GIVING_TURN
 }tx_states_e;
 
 /**
@@ -58,6 +54,9 @@ struct app_s
     task_context_t blinkTask;    /* Blink task */
     task_context_t pollTask;     /* Poll task */
     task_context_t rxTask;       /* Rx task */
+
+    task_context_t anchor_rx_task; /* Anchor Rx task */
+    task_context_t anchor_master_giving_turn_task; /* Anchor giving turn task */
     
     void (* hw_time_cb)(void); // pointer to the hardware timer callback
 };

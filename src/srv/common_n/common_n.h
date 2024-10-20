@@ -41,24 +41,23 @@
 // ----------------------------------------------------------------------------
 
 /* TxPckt */
-struct tx_pckt_s
+typedef struct tx_pckt_s
 {
-    int16_t        psduLen;
+    uint16_t psduLen;  /**< Length of the packet payload in bytes. */
 
     union {
-        std_msg_t           stdMsg;
-        twr_msg_t           twrMsg;
+        giving_turn_msg_t   giving_turn_msg;  /**< Giving turn message. */
 
-        blink_msg_t         blinkMsg;
-    } msg;
+        uint8_t             raw[STANDARD_FRAME_SIZE];  /**< Raw message buffer. */
+    } msg;  /**< Union of possible message types to be transmitted. */
 
-    uint8_t        txFlag;              // Holds Tx sending parameters: extended set for DW3000
+    uint8_t txFlag;  /**< Transmission flags indicating sending parameters (extended set for DW3000). */
 
-    uint32_t    delayedTxTimeH_sy;      // Delayed transmit time (in 4ns)
-    uint32_t    delayedRxTime_sy;       // Delay after Tx when to switch on receiver (in SY=1.0256us)
-    uint16_t    delayedRxTimeout_sy;    // How long the receiver will be switched on after Tx (in SY=1.0256us)
+    uint32_t delayedTxTimeH_sy;   /**< Delayed transmit time (units in 4ns). */
+    uint32_t delayedRxTime_sy;    /**< Delay after transmission before switching on receiver (units in symbols, 1 symbol ≈ 1.0256µs). */
+    uint16_t delayedRxTimeout_sy; /**< Duration the receiver remains on after transmission (units in symbols, 1 symbol ≈ 1.0256µs). */
 
-};
+} tx_pckt_t;
 
 typedef struct tx_pckt_s tx_pckt_t;
 

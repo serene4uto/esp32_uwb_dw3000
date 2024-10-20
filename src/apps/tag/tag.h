@@ -23,7 +23,6 @@
 
 #define TWR_TAG_BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */
 
-
 /* Rx Events circular buffer.
  * 0x02, 0x04, 0x08, 0x10, etc.
  * The size of the buffer at any given time should be < 2 */
@@ -35,17 +34,13 @@
 //-----------------------------------------------------------------------------
 // Struct & Typedefs
 
-/* RxPckt */
+/* rx packet structure of tag */
 struct tag_rx_pckt_s
 {
-  int16_t               rxDataLen;  
+  uint16_t rx_data_len;  
 
   union {
-    std_msg_t           stdMsg;
-    std_msg_ss_t        ssMsg;
-    std_msg_ls_t        lsMsg;
-    twr_msg_t           twrMsg;
-    blink_msg_t         blinkMsg;
+
   } msg;  
 
 };
@@ -69,8 +64,7 @@ struct tag_info_s {
     uint64_t eui64;
   };
 
-  QueueHandle_t rxPcktQueue = NULL; // circular Buffer of received Rx packets
-  
+  QueueHandle_t rx_pkt_queue = NULL; // queue of received packets
 
   /* ranging variables */
   struct {
@@ -81,13 +75,6 @@ struct tag_info_s {
       tx_states_e     txState;
   };
 
-  /* Environment - configured from Range init structure.
-   * slotCorr_us is used to adjust slot every reception as part of Response
-   */
-  struct env_params_s
-  {
-  } env;
-
 
   /* Tag's crystal clock offset trimming */
   int16_t     clkOffset_pphm;     //
@@ -97,6 +84,8 @@ struct tag_info_s {
 
   enum
   {
+    IDLE_MODE = 0x00,
+    WAIT_FOR_TURN_MODE,
     BLINKING_MODE,
     RANGING_MODE
   } mode;

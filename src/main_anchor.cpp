@@ -6,7 +6,9 @@
 #include "deca_probe_interface.h"
 #include "port.h"
 
-const param_block_t FConfig = DEFAULT_CONFIG;
+#include "task_anchor.h"
+
+param_block_t FConfig = DEFAULT_CONFIG;
 
 void main_anchor()
 {
@@ -59,7 +61,9 @@ void main_anchor()
   Serial.println("INIT OK");
 
 
-  
+  anchor_terminate();
+
+  anchor_helper(NULL);
 
 
   while (1)

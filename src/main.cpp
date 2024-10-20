@@ -19,7 +19,7 @@ void setup() {
 
 #if(DEVICE_ROLE == DEV_TAG)
   main_tag();
-#elif(DEVICE_ROLE == DEV_ANCHOR2)
+#elif(DEVICE_ROLE == DEV_ANCHOR)
   main_anchor();
 #endif
 
