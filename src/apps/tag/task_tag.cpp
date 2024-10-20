@@ -33,37 +33,37 @@ portMUX_TYPE tagTaskMux = portMUX_INITIALIZER_UNLOCKED;
 static void
 TagBlinkTask(void * arg)
 {
-    tag_info_t     *pTagInfo;
-    uint32_t notifyValue = 0;
+    // tag_info_t     *pTagInfo;
+    // uint32_t notifyValue = 0;
 
-    while(!(pTagInfo = getTagInfoPtr()))  //wait for initialisation of psTagInfo
-    {
-        vTaskDelay(100);
-    }
+    // while(!(pTagInfo = getTagInfoPtr()))  //wait for initialisation of psTagInfo
+    // {
+    //     vTaskDelay(100);
+    // }
 
-    while(1)
-    {
-        xSemaphoreGive(app.blinkTask.MutexId);
+    // while(1)
+    // {
+    //     xSemaphoreGive(app.blinkTask.MutexId);
 
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for the signal
+    //     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for the signal
 
-        xSemaphoreTake(app.blinkTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
+    //     xSemaphoreTake(app.blinkTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
 
-        Serial.println("Blinking");
+    //     Serial.println("Blinking");
 
-        tag_send_blink(pTagInfo); // send the blink
+    //     tag_send_blink(pTagInfo); // send the blink
 
-        /* set the next blink ms period */
-        uint32_t new_blink_period_ms;
-        new_blink_period_ms = (uint32_t)((float)((TWR_TAG_BLINK_PERIOD_MS/3.0)*rand()/RAND_MAX)); 
-        new_blink_period_ms += TWR_TAG_BLINK_PERIOD_MS;
+    //     /* set the next blink ms period */
+    //     uint32_t new_blink_period_ms;
+    //     new_blink_period_ms = (uint32_t)((float)((TAG_BLINK_PERIOD_MS/3.0)*rand()/RAND_MAX)); 
+    //     new_blink_period_ms += TAG_BLINK_PERIOD_MS;
 
-        timerAlarmDisable(hwtimer);
-        timerAlarmWrite(hwtimer, new_blink_period_ms*1000, false);
-        timerAlarmEnable(hwtimer);
+    //     timerAlarmDisable(hwtimer);
+    //     timerAlarmWrite(hwtimer, new_blink_period_ms*1000, false);
+    //     timerAlarmEnable(hwtimer);
 
         
-    }
+    // }
 }
 
 /*
@@ -75,7 +75,23 @@ TagBlinkTask(void * arg)
 static void
 TagPollTask(void * arg)
 {
-    
+    tag_info_t     *pTagInfo;
+
+    while(!(pTagInfo = getTagInfoPtr()))  //wait for initialisation of psTagInfo
+    {
+        vTaskDelay(100);
+    }
+
+    while(1)
+    {
+        xSemaphoreGive(app.tagPollTask.MutexId);
+
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for the signal
+
+        xSemaphoreTake(app.tagPollTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
+
+        Serial.println("Polling");
+    }
 }
 
 
@@ -83,29 +99,56 @@ TagPollTask(void * arg)
  *
  * */
 static void
-TagRxTask(void * arg)
+tag_rx_task(void * arg)
 {
-    
+    tag_info_t     *pTagInfo;
+    tag_rx_pckt_t  rxPckt;
+
+    while(!(pTagInfo = getTagInfoPtr()))  //wait for initialisation of psTagInfo
+    {
+        vTaskDelay(100);
+    }
+
+
+    taskENTER_CRITICAL(&tagTaskMux);
+
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);    //Start reception on the Node to wait for turn msg
+
+    taskEXIT_CRITICAL(&tagTaskMux);
+
+    Serial.println("Tag RX Task");
+
+    while(1)
+    {
+        xSemaphoreGive(app.tagRxTask.MutexId);
+
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for the signal
+
+        xSemaphoreTake(app.tagRxTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
+
+        // Serial.println("Receiving");
+
+        xQueueReceive(pTagInfo->rxPktQueue, &rxPckt, portMAX_DELAY);
+
+        tag_process_rx_pkt(pTagInfo, &rxPckt);
+
+        // vTaskDelay(1); // Have a short delay to allow the RX to be re-enabled
+        
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);     //re-enable receiver again - no timeout
+    }
 }
 
 
-/* @brief Setup TWR tasks and timers for discovery phase.
- *         - blinking timer
- *         - blinking task
- *          - twr polling task
- *         - rx task
- * Only setup, do not start.
- * */
 static void tag_setup_tasks(void)
 {
-    xTaskCreate(TagBlinkTask, "BlinkTask", 1024, NULL, TAG_TASK_BLINK_PRIO, &app.blinkTask.Handle);
-    app.blinkTask.MutexId = xSemaphoreCreateMutex();
+    // xTaskCreate(TagBlinkTask, "BlinkTask", 1024, NULL, TAG_TASK_BLINK_PRIO, &app.blinkTask.Handle);
+    // app.blinkTask.MutexId = xSemaphoreCreateMutex();
 
     // xTaskCreate(TagPollTask, "PollTask", 1024, NULL, TAG_TASK_TWR_POLL_PRIO, &app.pollTask.Handle);
     // app.pollTask.MutexId = xSemaphoreCreateMutex();
 
-    // xTaskCreate(TagRxTask, "RxTask", 1024, NULL, TAG_TASK_RX_PRIO, &app.rxTask.Handle);
-    // app.rxTask.MutexId = xSemaphoreCreateMutex();
+    xTaskCreate(tag_rx_task, "TagRxTask", 1024, NULL, TAG_TASK_RX_PRIO, &app.tagRxTask.Handle);
+    app.tagRxTask.MutexId = xSemaphoreCreateMutex();
 
     // if( (app.blinkTask.Handle == NULL)   ||\
     //     (app.pollTask. Handle == NULL)   ||\
@@ -114,10 +157,6 @@ static void tag_setup_tasks(void)
     //     //TODO: handle error
     // }
 
-    // release the mutexes
-    xSemaphoreGive(app.blinkTask.MutexId);
-    // xSemaphoreGive(app.pollTask.MutexId);
-    // xSemaphoreGive(app.rxTask.MutexId);
 }
 
 //-----------------------------------------------------------------------------
@@ -132,9 +171,9 @@ void tag_terminate(void)
     timerAlarmDisable(hwtimer); // stop the timer
 
     // terminate the tasks
-    TERMINATE_STD_TASK(app.blinkTask);
-    TERMINATE_STD_TASK(app.pollTask);
-    TERMINATE_STD_TASK(app.rxTask);
+    // TERMINATE_STD_TASK(app.blinkTask);
+    // TERMINATE_STD_TASK(app.pollTask);
+    // TERMINATE_STD_TASK(app.rxTask);
 
     tag_process_terminate();    //de-allocate Tag RAM Resources
 }
@@ -153,11 +192,11 @@ void tag_helper(void const *argument)
 
     port_disable_dw_irq_and_reset(1);
 
+    tag_setup_tasks();
+
     taskENTER_CRITICAL(&tagTaskMux);
 
     set_dw_spi_fast_rate();
-
-    tag_setup_tasks();
 
     err = tag_process_init();
 

@@ -51,12 +51,12 @@ struct app_s
 {
     param_block_t *pConfig;       /**< Current configuration */
 
-    task_context_t blinkTask;    /* Blink task */
-    task_context_t pollTask;     /* Poll task */
-    task_context_t rxTask;       /* Rx task */
-
     task_context_t anchor_rx_task; /* Anchor Rx task */
     task_context_t anchor_master_giving_turn_task; /* Anchor giving turn task */
+
+    task_context_t tagRxTask;    /* Tag Rx task */
+    task_context_t tagPollTask;  /* Tag Poll task */
+
     
     void (* hw_time_cb)(void); // pointer to the hardware timer callback
 };

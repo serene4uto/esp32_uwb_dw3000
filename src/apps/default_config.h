@@ -37,24 +37,24 @@
 
 
 /* UWB config */
-#define DEFAULT_CHANNEL             9
-#define DEFAULT_TXPREAMBLENGTH      DWT_PLEN_64
+#define DEFAULT_CHANNEL             5
+#define DEFAULT_TXPREAMBLENGTH      DWT_PLEN_128
 #define DEFAULT_RXPAC               DWT_PAC8
-#define DEFAULT_PCODE               9
+#define DEFAULT_PCODE               5
 #define DEFAULT_NSSFD               1  //! SFD type 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type
 #define DEFAULT_DATARATE            DWT_BR_6M8
 #define DEFAULT_PHRMODE             DWT_PHRMODE_STD
 #define DEFAULT_PHRRATE             DWT_PHRRATE_STD
-#define DEFAULT_SFDTO               (64 + 1 + 8 - 8)
-#define DEFAULT_STS_MODE            (DWT_STS_MODE_1 | DWT_STS_MODE_SDC) //!< STS mode
-#define DEFAULT_STS_LENGTH          DWT_STS_LEN_256  //!< STS length
-#define DEFAULT_PDOA_MODE           DWT_PDOA_M3      //!< pdoa mode: on SP1/3 Ipatov_64 + STS_256->PDoA_M3; if Ipatov_64 + STS_64 -> PDoA Mode 1
+#define DEFAULT_SFDTO               (129 + 8 - 8)
+#define DEFAULT_STS_MODE            DWT_STS_MODE_OFF //!< STS mode
+#define DEFAULT_STS_LENGTH          DWT_STS_LEN_64  //!< STS length
+#define DEFAULT_PDOA_MODE           DWT_PDOA_M0      //!< pdoa mode: on SP1/3 Ipatov_64 + STS_256->PDoA_M3; if Ipatov_64 + STS_64 -> PDoA Mode 1
 
 #define DEFAULT_STS_STATIC          1 //! 1 to re-load STS Key & IV after each Rx & Tx:: TCFM, Listener
 
 /* run-time config */
-#define DEFAULT_NODE_ADDR           0x0001  /**< Addr16    */
-#define DEFAULT_PANID               0xDECA  /**< PanID */
+// #define DEFAULT_NODE_ADDR           0x0001  /**< Addr16    */
+// #define DEFAULT_PANID               0xDECA  /**< PanID */
 #define DEFAULT_ANTD                (513.484f * 1e-9 / DWT_TIME_UNITS) /*Total antenna delay*/
 
 
@@ -140,7 +140,7 @@ typedef struct runtime_params_s
 
 typedef union 
 {
-    uint8_t     euiShort[2];
+    uint8_t     bytes[2];
     uint16_t    eui16;
 } __attribute__((__packed__)) dev_eui16_t;
 

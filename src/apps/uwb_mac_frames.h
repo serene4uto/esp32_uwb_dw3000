@@ -52,7 +52,13 @@ extern "C" {
 #define RC_VERSION_DR              (4)
 
 typedef enum {
+    MSG_NONE = 0x00,
     MSG_GIVING_TURN = 0x01,
+    MSG_ACK = 0x02,
+    MSG_POLL = 0x03,
+    MSG_RESP = 0x04,
+    MSG_FINAL = 0x05,
+    MSG_REPORT = 0x06,
 } uwb_msg_e_t;
 
 typedef enum {
@@ -109,12 +115,19 @@ mac_header_sl_t;
 typedef struct
 {
     mac_header_ss_t mac;
-    struct
-    {
-        uint8_t message_type;
-    } body;
+    uint8_t message_type;
+    uint8_t fcs[2];
 }__attribute__((packed))
 giving_turn_msg_t;
+
+
+typedef struct
+{
+    mac_header_ss_t mac;
+    uint8_t message_type;
+    uint8_t fcs[2] ;  
+}__attribute__((packed))
+ack_msg_t;
 
 
 #ifdef __cplusplus

@@ -74,6 +74,7 @@ tx_start(tx_pckt_t * pTxPckt)
 
     if(pTxPckt->psduLen)
     {
+        //print message
         dwt_writetxdata(pTxPckt->psduLen, (uint8_t *) &pTxPckt->msg.raw, 0);
         dwt_writetxfctrl(pTxPckt->psduLen, 0, 1);
     }

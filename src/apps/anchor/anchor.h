@@ -27,12 +27,13 @@
 /* RxPckt is the structure is for the current reception */
 struct anchor_rx_pckt_s
 {
-    int16_t        rxDataLen;
+    uint16_t        rxDataLen;
 
     union {
-        
-        uint8_t     raw[STANDARD_FRAME_SIZE];
-    } msg;
+      uint8_t             raw[STANDARD_FRAME_SIZE];   /**< Raw message buffer. */
+      giving_turn_msg_t   giving_turn_msg;            /**< Giving turn message. */
+      ack_msg_t           ack_msg;                    /**< Ack message. */
+    } msg;  /**< Union of possible message types to be received. */
 
     uint8_t     timeStamp[TS_40B_SIZE]; /* Timestamp of the received frame */
 
@@ -46,6 +47,12 @@ typedef struct anchor_rx_pckt_s anchor_rx_pckt_t;
 
 struct anchor_info_s
 {
+    /* Unique long Address, used at the discovery phase before Range Init reception */
+    union {
+        uint8_t  euiLong[8];
+        uint64_t eui64;
+    };
+
     /* Unique short Address, uses at the ranging phase
      * valid for low-endian compiler.
      * */
@@ -56,18 +63,11 @@ struct anchor_info_s
 
     uint16_t    panID;          // PAN ID
 
-
     QueueHandle_t rxPcktQueue = NULL;  // circular Buffer of received Rx packets
 
-    /* ranging variables */
-    struct {
-        /* MAC sequence number, increases on every tx_start */
-        uint8_t        seqNum;
-
-        /* Application DW_TX_IRQ source indicator */
-        tx_states_e     txState;
-    };
-
+    uint8_t seqNum; // sequence number, increases on every tx_start
+    uwb_msg_e_t lastTxMsg; // last transmitted message type
+    uwb_msg_e_t expectedRxMsg; // expected next rx message type
     
     bool   isMaster = false;  // true if this is the Master Anchor
 
@@ -95,5 +95,7 @@ void    anchor_process_terminate(void);
 
 
 error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo);
+
+error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt);
 
 #endif /* __ANCHOR_M__H__ */

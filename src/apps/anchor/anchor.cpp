@@ -13,8 +13,8 @@
 #include "common_n.h"
 #include "util.h"
 
-#define TWR_ANCHOR_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
-#define TWR_ANCHOR_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
+#define ANCHOR_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
+#define ANCHOR_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
 
 
 static anchor_info_t    sAnchorInfo;
@@ -36,7 +36,7 @@ void anchor_tx_cb(const dwt_cb_data_t *txd){
     }
 
     // Store the Tx timestamp of the sent packet
-    if (pAnchorInfo->txState == TWR_TX_GIVING_TURN)
+    if (pAnchorInfo->lastTxMsg == MSG_GIVING_TURN)
     {
         //TODO
     }
@@ -61,13 +61,9 @@ void anchor_rx_cb(const dwt_cb_data_t *rxd){
 
     xQueueSendFromISR(pAnchorInfo->rxPcktQueue, &rxPckt, &xHigherPriorityTaskWoken);
 
-
     if(app.anchor_rx_task.Handle)
     {
-        if(app.anchor_rx_task.MutexId)
-        {
-            xSemaphoreGiveFromISR(app.anchor_rx_task.MutexId, &xHigherPriorityTaskWoken);
-        }
+        vTaskNotifyGiveFromISR(app.anchor_rx_task.Handle, &xHigherPriorityTaskWoken);
     }
 
 
@@ -127,11 +123,11 @@ error_e anchor_process_init(void) {
     /* dwt_xx calls in app level Must be in protected mode (DW3000 IRQ disabled) */
     disable_dw3000_irq();
 
-    TWR_ANCHOR_ENTER_CRITICAL();
+    ANCHOR_ENTER_CRITICAL();
 
     if (dwt_initialise(DWT_DW_INIT) != DWT_SUCCESS)  /**< set callbacks to NULL inside dwt_initialise*/
     {
-        TWR_ANCHOR_EXIT_CRITICAL();
+        ANCHOR_EXIT_CRITICAL();
         return (_ERR_INIT);
     }
 
@@ -140,7 +136,7 @@ error_e anchor_process_init(void) {
     uint32_t dev_id = dwt_readdevid();
 
     if (dev_id != DWT_C0_DEV_ID) {
-        TWR_ANCHOR_EXIT_CRITICAL();
+        ANCHOR_EXIT_CRITICAL();
         return (_ERR_INIT);
     }
 
@@ -163,10 +159,11 @@ error_e anchor_process_init(void) {
 
     dwt_setcallbacks(anchor_tx_cb, anchor_rx_cb, anchor_rx_timeout_cb, anchor_rx_error_cb, NULL, NULL);
 
+    // Note: if no DWT_INT_SPIRDY_BIT_MASK, the system work unexpectedly
+    // DWT_INT_SPIRDY_BIT_MASK is must-have
     dwt_setinterrupt(\
         (\
             DWT_INT_SPIRDY_BIT_MASK | \
-            DWT_INT_ARFE_BIT_MASK   | \
             DWT_INT_TXFRS_BIT_MASK | \
             DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK | \
             DWT_INT_RXPHE_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXFTO_BIT_MASK
@@ -179,6 +176,8 @@ error_e anchor_process_init(void) {
 
     /* configure non-zero initial values */
     pAnchorInfo->seqNum    = (uint8_t)(0xff*rand()/RAND_MAX);
+    pAnchorInfo->expectedRxMsg = MSG_NONE;
+    pAnchorInfo->lastTxMsg = MSG_NONE;
 
 
     /*
@@ -192,9 +191,7 @@ error_e anchor_process_init(void) {
         dwt_setxtaltrim(app.pConfig->runtime_params.xtal_trim& XTAL_TRIM_BIT_MASK);
     }
 
-    
-
-    TWR_ANCHOR_EXIT_CRITICAL();
+    ANCHOR_EXIT_CRITICAL();
 
 
     return _NO_ERR;
@@ -240,15 +237,15 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     txPckt.msg.giving_turn_msg.mac.panID[1] = (uint8_t)(pAnchorInfo->panID >> 8);
 
     // set the destination address
-    txPckt.msg.giving_turn_msg.mac.destAddr[0] = (uint8_t)(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].eui16 & 0xff);
-    txPckt.msg.giving_turn_msg.mac.destAddr[1] = (uint8_t)(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].eui16 >> 8);
+    txPckt.msg.giving_turn_msg.mac.destAddr[0] = (uint8_t)(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[0]);
+    txPckt.msg.giving_turn_msg.mac.destAddr[1] = (uint8_t)(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[1]);
 
     // set the source address
     txPckt.msg.giving_turn_msg.mac.sourceAddr[0] = (uint8_t)(pAnchorInfo->eui16 & 0xff);
     txPckt.msg.giving_turn_msg.mac.sourceAddr[1] = (uint8_t)(pAnchorInfo->eui16 >> 8);
 
     // set the message type
-    txPckt.msg.giving_turn_msg.body.message_type = MSG_GIVING_TURN;
+    txPckt.msg.giving_turn_msg.message_type = MSG_GIVING_TURN;
 
 
     txPckt.txFlag               = ( DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED );
@@ -256,14 +253,42 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcRxTo_us);   //Ranging Config: receiver will be active for this time, SY
     
     pAnchorInfo->seqNum++;
-    pAnchorInfo->txState = TWR_TX_GIVING_TURN;
+    pAnchorInfo->lastTxMsg = MSG_GIVING_TURN;
+    pAnchorInfo->expectedRxMsg = MSG_ACK;    
 
-    TWR_ANCHOR_ENTER_CRITICAL();
+    ANCHOR_ENTER_CRITICAL();
 
     ret = tx_start(&txPckt);
 
-    TWR_ANCHOR_EXIT_CRITICAL();
+    ANCHOR_EXIT_CRITICAL();
+
+    if (ret != _NO_ERR)
+    {
+        Serial.println("Error in tx_start");
+    }
     
+    return ret;
+}
+
+error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt)
+{
+    error_e ret = _NO_ERR;
+
+    if(pAnchorInfo->expectedRxMsg == MSG_ACK && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
+    {
+        if(pRxPckt->msg.ack_msg.message_type != MSG_ACK)
+        {
+            return _ERR; //TODO: handle error
+        }
+
+        Serial.println("ACK received");
+
+        // disable ack timeout timer
+        // timerAlarmDisable(hwtimer);
+        // pAnchorInfo->mode == anchor_info_s::RANGING_MODE;
+    
+    }
+
 
     return ret;
 }
