@@ -132,7 +132,7 @@ tag_rx_task(void * arg)
 
         tag_process_rx_pkt(pTagInfo, &rxPckt);
 
-        // vTaskDelay(1); // Have a short delay to allow the RX to be re-enabled
+        vTaskDelay(1); // Have a short delay to allow the RX to be re-enabled
         
         dwt_rxenable(DWT_START_RX_IMMEDIATE);     //re-enable receiver again - no timeout
     }

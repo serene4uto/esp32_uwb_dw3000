@@ -28,6 +28,7 @@ anchor_info_t * getAnchorInfoPtr(void)
     return (psAnchorInfo);
 }
 
+static
 void anchor_tx_cb(const dwt_cb_data_t *txd){
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
 
@@ -43,6 +44,7 @@ void anchor_tx_cb(const dwt_cb_data_t *txd){
 
 }
 
+static
 void anchor_rx_cb(const dwt_cb_data_t *rxd){
 
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
@@ -69,11 +71,13 @@ void anchor_rx_cb(const dwt_cb_data_t *rxd){
 
 }
 
+static
 void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd){
     dwt_setrxtimeout(0);
     dwt_rxenable(0);
 }
 
+static
 void anchor_rx_error_cb(const dwt_cb_data_t *rxd){
     anchor_rx_timeout_cb(rxd);
 }
@@ -176,8 +180,6 @@ error_e anchor_process_init(void) {
 
     /* configure non-zero initial values */
     pAnchorInfo->seqNum    = (uint8_t)(0xff*rand()/RAND_MAX);
-    pAnchorInfo->expectedRxMsg = MSG_NONE;
-    pAnchorInfo->lastTxMsg = MSG_NONE;
 
 
     /*
@@ -191,7 +193,11 @@ error_e anchor_process_init(void) {
         dwt_setxtaltrim(app.pConfig->runtime_params.xtal_trim& XTAL_TRIM_BIT_MASK);
     }
 
+    pAnchorInfo->expectedRxMsg = MSG_NONE;
+    pAnchorInfo->lastTxMsg = MSG_NONE;
+
     ANCHOR_EXIT_CRITICAL();
+
 
 
     return _NO_ERR;

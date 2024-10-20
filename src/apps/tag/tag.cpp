@@ -121,8 +121,10 @@ tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
     // {
     //     return;
     // }
-    dwt_setrxtimeout(0);
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
+
+    // dwt_setrxtimeout(0);
+    // dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
 static void
@@ -233,11 +235,10 @@ error_e tag_process_init(void)
         tag_rx_timeout_cb, 
         tag_rx_error_cb, 
         NULL, 
-        tag_spi_rdy_cb);
+        NULL);
 
     dwt_setinterrupt(\
         (\
-            DWT_INT_SPIRDY_BIT_MASK | \
             DWT_INT_TXFRS_BIT_MASK | \
             DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK | \
             DWT_INT_RXPHE_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXFTO_BIT_MASK
