@@ -83,7 +83,7 @@ tx_start(tx_pckt_t * pTxPckt)
     if (pTxPckt->txFlag &
         (DWT_START_TX_DELAYED | DWT_START_TX_DLY_REF | DWT_START_TX_DLY_RS | DWT_START_TX_DLY_TS))
     {
-        dwt_setdelayedtrxtime(pTxPckt->delayedTxTimeH_sy) ;
+        dwt_setdelayedtrxtime(pTxPckt->delayedTxTimeH_dt) ;
     }
 
     //Setup for delayed Receive after Tx (units are sy = 1.0256 us)
@@ -101,4 +101,5 @@ tx_start(tx_pckt_t * pTxPckt)
 
     return (ret);
 }
+
 

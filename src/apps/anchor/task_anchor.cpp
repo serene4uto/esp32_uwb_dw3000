@@ -39,6 +39,8 @@ void anchor_master_giving_turn_task(void *arg)
 
         xSemaphoreTake(app.anchor_master_giving_turn_task.MutexId, portMAX_DELAY); // we do not want the task can be deleted in the middle of operation
 
+        // dwt_writefastCMD(CMD_TXRXOFF); // stop the receiver
+
         anchor_master_give_turn(pAnchorInfo);
 
         Serial.print("Anchor Master giving turn to Tag: ");
@@ -95,9 +97,6 @@ void anchor_setup_tasks(void)
     {
         //TODO: handle error
     }
-
-    // xSemaphoreTake(app.anchor_rx_task.MutexId, portMAX_DELAY);
-    // xSemaphoreTake(app.anchor_master_giving_turn_task.MutexId, portMAX_DELAY);
 
 }
 

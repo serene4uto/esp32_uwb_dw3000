@@ -16,6 +16,8 @@
 #include "util.h"
 
 
+#define TAG_GIVING_TURN_ACK_DELAY_UUS     (1200)    /* delay before sending ACK after receiving Giving Turn message, us */
+
 
 #define TAG_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define TAG_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
@@ -318,10 +320,10 @@ error_e tag_send_blink(tag_info_t *p)
     return ret;
 }
 
-error_e tag_send_ack(tag_info_t *pTagInfo)
+error_e tag_respond_ack(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
 {
-    error_e       ret;
-
+    error_e       ret = _NO_ERR;
+    uint64_t      u64RxTs;
     tx_pckt_t txPckt;
 
     memset(&txPckt, 0, sizeof(txPckt));
@@ -342,14 +344,28 @@ error_e tag_send_ack(tag_info_t *pTagInfo)
 
     txPckt.msg.ack_msg.message_type = MSG_ACK;
 
-    txPckt.txFlag               = ( DWT_START_TX_IMMEDIATE );
+    txPckt.txFlag               = ( DWT_START_TX_DELAYED );
+    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);
+    
+
+    // calculate the delayed time to respond
+    TS2U64_MEMCPY(u64RxTs, pRxPckt->timeStamp);
+
+    // add delay
+    txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_GIVING_TURN_ACK_DELAY_UUS) ) >> 8; // only high 32 bits
 
     pTagInfo->seqNum++;
     pTagInfo->lastTxMsg = MSG_ACK;
 
     TAG_ENTER_CRITICAL();
-    tx_start(&txPckt);
+    ret = tx_start(&txPckt);
     TAG_EXIT_CRITICAL();
+
+    if(ret != _NO_ERR)
+    {
+        Serial.println("tx error");
+    }
 
     return ret;
 }
@@ -357,49 +373,78 @@ error_e tag_send_ack(tag_info_t *pTagInfo)
 
 error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
 {
+    // ----------------------------------------------------------------------------
+    // TODO: optimize this function
+    if (pTagInfo->expectedRxMsg == MSG_GIVING_TURN) {
 
-    if(pTagInfo->expectedRxMsg == MSG_GIVING_TURN) {
-
-        if(pRxPckt->msg.giving_turn_msg.message_type != MSG_GIVING_TURN) {
+        // Check if the message type is MSG_GIVING_TURN
+        if (pRxPckt->msg.giving_turn_msg.message_type != MSG_GIVING_TURN) {
+            // Error handling
+            dwt_writefastCMD(CMD_TXRXOFF);
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            dwt_setrxtimeout(0);
             return _ERR;
         }
-        
-        // print raw message
-        for (int i = 0; i < pRxPckt->rxDataLen; i++)
-        {
+
+        // Print raw message
+        for (int i = 0; i < pRxPckt->rxDataLen; i++) {
             Serial.print(pRxPckt->msg.raw[i], HEX);
             Serial.print(" ");
         }
         Serial.println();
 
-        // check the destination address
-        if(pRxPckt->msg.giving_turn_msg.mac.destAddr[0] != (uint8_t)(pTagInfo->shortAddress.bytes[0]) || 
-            pRxPckt->msg.giving_turn_msg.mac.destAddr[1] != (uint8_t)(pTagInfo->shortAddress.bytes[1])) {
+        // Check the destination address
+        if (memcmp(pRxPckt->msg.giving_turn_msg.mac.destAddr,
+                   pTagInfo->shortAddress.bytes,
+                   sizeof(pTagInfo->shortAddress.bytes)) != 0) {
+            // Error handling
+            dwt_writefastCMD(CMD_TXRXOFF);
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            dwt_setrxtimeout(0);
             return _ERR;
         }
 
-        // check the source address
-        if(pRxPckt->msg.giving_turn_msg.mac.sourceAddr[0] != (uint8_t)(pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes[0]) || 
-            pRxPckt->msg.giving_turn_msg.mac.sourceAddr[1] != (uint8_t)(pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes[1])) {
+        // Check the source address
+        if (memcmp(pRxPckt->msg.giving_turn_msg.mac.sourceAddr,
+                   pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes,
+                   sizeof(pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes)) != 0) {
+            // Error handling
+            dwt_writefastCMD(CMD_TXRXOFF);
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            dwt_setrxtimeout(0);
             return _ERR;
         }
 
-        Serial.println("Receiving Giving Turn Message");
+        // Send ACK
+        if (tag_respond_ack(pTagInfo, pRxPckt) != _NO_ERR) {
+            // Error handling
+            dwt_writefastCMD(CMD_TXRXOFF);
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            dwt_setrxtimeout(0);
+            return _ERR;
+        }
 
-        // send ACK
-        tag_send_ack(pTagInfo);
-
-        // set up new phase
+        // Set up new phase
         pTagInfo->mode = tag_info_s::RANGING_MODE;
 
+        return _NO_ERR;
     }
-    else {
+
+    // ----------------------------------------------------------------------------
+    if (pTagInfo->expectedRxMsg == MSG_RESP) {
+        // TODO: implement this
 
     }
 
+
+    // ----------------------------------------------------------------------------
+    if (pTagInfo->expectedRxMsg == MSG_REPORT) {
+        //TODO: implement this
+    }
 
     return _NO_ERR;
 }
+
 
 
 

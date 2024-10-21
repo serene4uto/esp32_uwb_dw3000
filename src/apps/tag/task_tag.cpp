@@ -116,8 +116,6 @@ tag_rx_task(void * arg)
 
     taskEXIT_CRITICAL(&tagTaskMux);
 
-    Serial.println("Tag RX Task");
-
     while(1)
     {
         xSemaphoreGive(app.tagRxTask.MutexId);
@@ -126,15 +124,9 @@ tag_rx_task(void * arg)
 
         xSemaphoreTake(app.tagRxTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
 
-        // Serial.println("Receiving");
-
         xQueueReceive(pTagInfo->rxPktQueue, &rxPckt, portMAX_DELAY);
 
         tag_process_rx_pkt(pTagInfo, &rxPckt);
-
-        vTaskDelay(1); // Have a short delay to allow the RX to be re-enabled
-        
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);     //re-enable receiver again - no timeout
     }
 }
 

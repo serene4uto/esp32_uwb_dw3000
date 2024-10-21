@@ -82,9 +82,6 @@ void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd){
         return;
     }
 
-    // dwt_setrxtimeout(0);
-    // dwt_rxenable(0);
-
     if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
     {
         // if timeout occurs, the Master Anchor gives the turn to the next Tag
@@ -104,7 +101,10 @@ void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd){
 
 static
 void anchor_rx_error_cb(const dwt_cb_data_t *rxd){
-    // anchor_rx_timeout_cb(rxd);
+
+    //TODO: implement this function
+    anchor_rx_timeout_cb(rxd);
+    
 }
 
 static
@@ -197,17 +197,16 @@ error_e anchor_process_init(void) {
         anchor_rx_timeout_cb, \
         anchor_rx_error_cb, \
         NULL, \
-        anchor_spi_rdy_cb);
+        NULL);
 
-    // Note: if no DWT_INT_SPIRDY_BIT_MASK, the system work unexpectedly ??? TODO: check this
-    // DWT_INT_SPIRDY_BIT_MASK is must-have
+
     dwt_setinterrupt(\
-        (\
-            DWT_INT_TXFRS_BIT_MASK | \
-            DWT_INT_RXFCG_BIT_MASK | \
-            DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK | \
-            DWT_INT_RXPHE_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | \
-            DWT_INT_RXFTO_BIT_MASK
+        (
+            DWT_INT_TXFRS_BIT_MASK 
+            | DWT_INT_RXFCG_BIT_MASK 
+            | DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK 
+            | DWT_INT_RXPHE_BIT_MASK | DWT_INT_RXFCE_BIT_MASK 
+            | DWT_INT_RXFTO_BIT_MASK
         ),\
         0,\
         DWT_ENABLE_INT_ONLY\
@@ -289,13 +288,12 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     txPckt.msg.giving_turn_msg.message_type = MSG_GIVING_TURN;
 
 
+    // set transmission parameters
+    // tx immediately --> rx immediately --> rx timeout
     txPckt.txFlag               = ( DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED );
-    // txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcDelay_us);  //Ranging Config: activate receiver this time SY after Blink Tx
-    // txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcRxTo_us);   //Ranging Config: receiver will be active for this time, SY
-
-    txPckt.delayedTxTimeH_sy    = (uint32_t)util_us_to_sy(0);  //TODO: check this
-    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(150000);
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000); 
+    txPckt.delayedTxTimeH_dt    = (uint32_t)util_us_to_sy(0);   // delayed TX time
+    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);   // TX to RX delay
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000);   // RX timeout
     
     pAnchorInfo->seqNum++;
     pAnchorInfo->lastTxMsg = MSG_GIVING_TURN;
@@ -342,8 +340,8 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
 
 
 static void IRAM_ATTR anchor_hw_timer_cb() {
-    anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    // anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
+    // BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     // if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
     // {

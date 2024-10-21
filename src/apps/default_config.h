@@ -37,18 +37,18 @@
 
 
 /* UWB config */
-#define DEFAULT_CHANNEL             5
-#define DEFAULT_TXPREAMBLENGTH      DWT_PLEN_128
-#define DEFAULT_RXPAC               DWT_PAC8
-#define DEFAULT_PCODE               5
-#define DEFAULT_NSSFD               1  //! SFD type 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type
-#define DEFAULT_DATARATE            DWT_BR_6M8
-#define DEFAULT_PHRMODE             DWT_PHRMODE_STD
-#define DEFAULT_PHRRATE             DWT_PHRRATE_STD
-#define DEFAULT_SFDTO               (129 + 8 - 8)
-#define DEFAULT_STS_MODE            DWT_STS_MODE_OFF //!< STS mode
-#define DEFAULT_STS_LENGTH          DWT_STS_LEN_64  //!< STS length
-#define DEFAULT_PDOA_MODE           DWT_PDOA_M0      //!< pdoa mode: on SP1/3 Ipatov_64 + STS_256->PDoA_M3; if Ipatov_64 + STS_64 -> PDoA Mode 1
+#define DEFAULT_CHANNEL             5                   //!< Channel number (5 to 9)
+#define DEFAULT_TXPREAMBLENGTH      DWT_PLEN_128        //!< Preamble length. Used in TX only.
+#define DEFAULT_RXPAC               DWT_PAC8            //!< Preamble acquisition chunk size. Used in RX only.
+#define DEFAULT_PCODE               9                   //!< TX RX preamble code. Used in TX RX.
+#define DEFAULT_NSSFD               1                   //! SFD type 0 to use standard 8 symbol SFD, 1 to use non-standard 8 symbol, 2 for non-standard 16 symbol SFD and 3 for 4z 8 symbol SDF type
+#define DEFAULT_DATARATE            DWT_BR_6M8          //!< Data rate. 
+#define DEFAULT_PHRMODE             DWT_PHRMODE_STD     //!< PHY header mode.
+#define DEFAULT_PHRRATE             DWT_PHRRATE_STD     //!< PHY header rate.
+#define DEFAULT_SFDTO               (128 + 1 + 8 - 8)   //!< SFD timeout (preamble length + 1 + SFD length - PAC size). Used in RX only.
+#define DEFAULT_STS_MODE            DWT_STS_MODE_OFF    //!< STS mode
+#define DEFAULT_STS_LENGTH          DWT_STS_LEN_64      //!< STS length
+#define DEFAULT_PDOA_MODE           DWT_PDOA_M0         //!< pdoa mode: on SP1/3 Ipatov_64 + STS_256->PDoA_M3; if Ipatov_64 + STS_64 -> PDoA Mode 1
 
 #define DEFAULT_STS_STATIC          1 //! 1 to re-load STS Key & IV after each Rx & Tx:: TCFM, Listener
 

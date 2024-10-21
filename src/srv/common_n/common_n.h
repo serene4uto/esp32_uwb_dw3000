@@ -3,13 +3,9 @@
  *
  * @brief   common TWR defines, types and fn()
  *
- * @attention
+ * @attention //TODO: Add attention here
  *
- * Copyright 2016-2020 (c) Decawave Ltd, Dublin, Ireland.
- *
- * All rights reserved.
- *
- * @author
+ * @author Nguyen Ha Trung
  */
 
 #ifndef CORE_SRC_SRV_COMMON_N_H_
@@ -22,21 +18,6 @@
 #include "deca_device_api.h"
 #include "deca_interface.h"
 #include "uwb_mac_frames.h"
-
-
-
-
-#ifndef M_PI
-#define M_PI    (3.141592654f)
-#endif
-
-#ifndef M_PI_2
-#define M_PI_2  (1.570796327f)
-#endif
-
-#ifndef TWO_PI
-#define TWO_PI  (2*M_PI)
-#endif
 
 // ----------------------------------------------------------------------------
 
@@ -53,9 +34,9 @@ typedef struct tx_pckt_s
 
     uint8_t txFlag;  /**< Transmission flags indicating sending parameters (extended set for DW3000). */
 
-    uint32_t delayedTxTimeH_sy;   /**< Delayed transmit time (units in 4ns). */
-    uint32_t delayedRxTime_sy;    /**< Delay after transmission before switching on receiver (units in symbols, 1 symbol ≈ 1.0256µs). */
-    uint16_t delayedRxTimeout_sy; /**< Duration the receiver remains on after transmission (units in symbols, 1 symbol ≈ 1.0256µs). */
+    uint32_t delayedTxTimeH_dt;   /**< Delay before transmission in dt, the high 32 bits only. Check DW3000 User Manual, section 3.3. */
+    uint32_t delayedRxTime_sy;    /**< Delay after transmission before switching on receiver in symbols. */
+    uint32_t delayedRxTimeout_sy; /**< Duration the receiver remains on after transmission in symbols. */
 
 } tx_pckt_t;
 

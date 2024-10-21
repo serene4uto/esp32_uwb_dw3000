@@ -59,6 +59,7 @@ typedef enum {
     MSG_RESP = 0x04,
     MSG_FINAL = 0x05,
     MSG_REPORT = 0x06,
+    MSG_END_TURN = 0x07,
 } uwb_msg_e_t;
 
 typedef enum {

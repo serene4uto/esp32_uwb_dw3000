@@ -23,6 +23,8 @@
  extern "C" {
 #endif
 
+#define MASK_TXDTS            (0x00FFFFFFFE00ULL)  //The TX timestamp will snap to 8 ns resolution - mask lower 9 bits.
+
 /**
  * @brief Structure representing the context of a task.
  *
