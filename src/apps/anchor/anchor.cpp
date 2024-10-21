@@ -32,6 +32,7 @@ static
 void anchor_tx_cb(const dwt_cb_data_t *txd){
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
 
+
     if (!pAnchorInfo) {
         return;
     }
@@ -73,13 +74,42 @@ void anchor_rx_cb(const dwt_cb_data_t *rxd){
 
 static
 void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd){
-    dwt_setrxtimeout(0);
-    dwt_rxenable(0);
+
+    anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (!pAnchorInfo) {
+        return;
+    }
+
+    // dwt_setrxtimeout(0);
+    // dwt_rxenable(0);
+
+    if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
+    {
+        // if timeout occurs, the Master Anchor gives the turn to the next Tag
+        pAnchorInfo->curTagIdx++;
+        if (pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum)
+        {
+            pAnchorInfo->curTagIdx = 0; // reset the index
+        }
+
+        // signal the Anchor Master giving turn task
+        if(app.anchor_master_giving_turn_task.Handle)
+        {
+            vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
+        }
+    }
 }
 
 static
 void anchor_rx_error_cb(const dwt_cb_data_t *rxd){
     anchor_rx_timeout_cb(rxd);
+}
+
+static
+void anchor_spi_rdy_cb(const dwt_cb_data_t *rxd){
+    Serial.println("SPI Ready");
 }
 
 error_e anchor_process_init(void) {
@@ -161,16 +191,23 @@ error_e anchor_process_init(void) {
     dwt_setleds(DWT_LEDS_ENABLE | DWT_LEDS_INIT_BLINK) ;     /**< DEBUG I/O 2&3 : configure the GPIOs which control the LEDs on HW */
     dwt_setlnapamode(DWT_TXRX_EN);  /**< DEBUG I/O 0&1 : configure TX/RX states to output on GPIOs */
 
-    dwt_setcallbacks(anchor_tx_cb, anchor_rx_cb, anchor_rx_timeout_cb, anchor_rx_error_cb, NULL, NULL);
+    dwt_setcallbacks(\
+        anchor_tx_cb, \
+        anchor_rx_cb, \
+        anchor_rx_timeout_cb, \
+        anchor_rx_error_cb, \
+        NULL, \
+        anchor_spi_rdy_cb);
 
-    // Note: if no DWT_INT_SPIRDY_BIT_MASK, the system work unexpectedly
+    // Note: if no DWT_INT_SPIRDY_BIT_MASK, the system work unexpectedly ??? TODO: check this
     // DWT_INT_SPIRDY_BIT_MASK is must-have
     dwt_setinterrupt(\
         (\
-            DWT_INT_SPIRDY_BIT_MASK | \
             DWT_INT_TXFRS_BIT_MASK | \
-            DWT_INT_RXFCG_BIT_MASK | DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK | \
-            DWT_INT_RXPHE_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | DWT_INT_RXFTO_BIT_MASK
+            DWT_INT_RXFCG_BIT_MASK | \
+            DWT_INT_RXFSL_BIT_MASK | DWT_INT_RXSTO_BIT_MASK | \
+            DWT_INT_RXPHE_BIT_MASK | DWT_INT_RXFCE_BIT_MASK | \
+            DWT_INT_RXFTO_BIT_MASK
         ),\
         0,\
         DWT_ENABLE_INT_ONLY\
@@ -197,8 +234,6 @@ error_e anchor_process_init(void) {
     pAnchorInfo->lastTxMsg = MSG_NONE;
 
     ANCHOR_EXIT_CRITICAL();
-
-
 
     return _NO_ERR;
 }
@@ -255,12 +290,17 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
 
 
     txPckt.txFlag               = ( DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED );
-    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcDelay_us);  //Ranging Config: activate receiver this time SY after Blink Tx
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcRxTo_us);   //Ranging Config: receiver will be active for this time, SY
+    // txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcDelay_us);  //Ranging Config: activate receiver this time SY after Blink Tx
+    // txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(app.pConfig->runtime_params.rcRxTo_us);   //Ranging Config: receiver will be active for this time, SY
+
+    txPckt.delayedTxTimeH_sy    = (uint32_t)util_us_to_sy(0);  //TODO: check this
+    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(150000);
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000); 
     
     pAnchorInfo->seqNum++;
     pAnchorInfo->lastTxMsg = MSG_GIVING_TURN;
-    pAnchorInfo->expectedRxMsg = MSG_ACK;    
+    pAnchorInfo->expectedRxMsg = MSG_ACK;  
+
 
     ANCHOR_ENTER_CRITICAL();
 
@@ -305,19 +345,19 @@ static void IRAM_ATTR anchor_hw_timer_cb() {
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
-    {
-        // if timeout occurs, the Master Anchor gives the turn to the next Tag
-        pAnchorInfo->curTagIdx++;
-        if (pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum)
-        {
-            pAnchorInfo->curTagIdx = 0; // reset the index
-        }
+    // if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
+    // {
+    //     // if timeout occurs, the Master Anchor gives the turn to the next Tag
+    //     pAnchorInfo->curTagIdx++;
+    //     if (pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum)
+    //     {
+    //         pAnchorInfo->curTagIdx = 0; // reset the index
+    //     }
 
-        // signal the Anchor Master giving turn task
-        if(app.anchor_master_giving_turn_task.Handle)
-        {
-            vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
-        }
-    }
+    //     // signal the Anchor Master giving turn task
+    //     if(app.anchor_master_giving_turn_task.Handle)
+    //     {
+    //         vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
+    //     }
+    // }
 }

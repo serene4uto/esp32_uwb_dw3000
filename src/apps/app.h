@@ -23,12 +23,6 @@
  extern "C" {
 #endif
 
-
-typedef enum {
-    TWR_TX_DONE = 0x00,
-    TWR_TX_GIVING_TURN
-}tx_states_e;
-
 /**
  * @brief Structure representing the context of a task.
  *
@@ -58,7 +52,7 @@ struct app_s
     task_context_t tagPollTask;  /* Tag Poll task */
 
     
-    void (* hw_time_cb)(void); // pointer to the hardware timer callback
+    // void (* hw_time_cb)(void); // pointer to the hardware timer callback
 };
 
 typedef struct app_s app_t;

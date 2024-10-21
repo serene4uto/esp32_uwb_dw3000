@@ -22,7 +22,8 @@ hw_timer_t * hwtimer = NULL;
 
 portMUX_TYPE task_mux = portMUX_INITIALIZER_UNLOCKED;
 
-bool isDw3000InterruptAttached = false;
+static bool isDw3000InterruptAttached = false;
+static bool isGpioIsrServiceInstalled = false;
 
 /****************************************************************************//**
  * Sleep, usleep and bare sw_timer based on HAL tick
@@ -84,30 +85,101 @@ void dwp_usleep(uint32_t usec)
  *
  */
 
+// void init_dw3000_irq(void)
+// {
+//     const dw_t *pDw = pDwChip;
+
+//     pinMode(pDw->irqPin, INPUT_PULLDOWN);
+// }
+// void enable_dw3000_irq(void)
+// {
+//     const dw_t *pDw = pDwChip;
+
+//     attachInterrupt(pDw->irqPin, dwt_isr, RISING);
+
+//     isDw3000InterruptAttached = true;
+// }
+
+// void disable_dw3000_irq(void)
+// {
+//     const dw_t *pDw = pDwChip;
+
+//     // check if the interrupt is attached
+//     if (isDw3000InterruptAttached)
+//     {
+//         detachInterrupt(pDw->irqPin);
+//         isDw3000InterruptAttached = false;
+//     }
+// }
+
+
+static void IRAM_ATTR isr_handler(void *arg)
+{
+    dwt_isr();
+}
+
 void init_dw3000_irq(void)
 {
     const dw_t *pDw = pDwChip;
 
-    pinMode(pDw->irqPin, INPUT_PULLDOWN);
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << pDw->irqPin),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+
+    esp_err_t ret = gpio_config(&io_conf);
+    if (ret != ESP_OK) {
+        // ESP_LOGE(TAG, "GPIO config failed: %s", esp_err_to_name(ret));
+    }
 }
+
 void enable_dw3000_irq(void)
 {
     const dw_t *pDw = pDwChip;
 
-    attachInterrupt(pDw->irqPin, dwt_isr, RISING);
+    // Install GPIO ISR service if not already installed
+    if (!isGpioIsrServiceInstalled) {
+        esp_err_t ret = gpio_install_isr_service(0);
+        if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+            // ESP_LOGE(TAG, "ISR service install failed: %s", esp_err_to_name(ret));
+            return;
+        }
+        isGpioIsrServiceInstalled = true;
+    }
+
+    // Configure the interrupt type for the GPIO pin
+    esp_err_t ret = gpio_set_intr_type((gpio_num_t)pDw->irqPin, GPIO_INTR_POSEDGE);
+    if (ret != ESP_OK) {
+        // ESP_LOGE(TAG, "Set interrupt type failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    // Add ISR handler for the GPIO pin
+    ret = gpio_isr_handler_add((gpio_num_t)pDw->irqPin, isr_handler, NULL);
+    if (ret != ESP_OK) {
+        // ESP_LOGE(TAG, "ISR handler add failed: %s", esp_err_to_name(ret));
+        return;
+    }
 
     isDw3000InterruptAttached = true;
+    // ESP_LOGI(TAG, "DW3000 interrupt enabled");
 }
 
 void disable_dw3000_irq(void)
 {
     const dw_t *pDw = pDwChip;
 
-    // check if the interrupt is attached
-    if (isDw3000InterruptAttached)
-    {
-        detachInterrupt(pDw->irqPin);
+    if (isDw3000InterruptAttached) {
+        esp_err_t ret = gpio_isr_handler_remove((gpio_num_t)pDw->irqPin);
+        if (ret != ESP_OK) {
+            // ESP_LOGE(TAG, "ISR handler remove failed: %s", esp_err_to_name(ret));
+            return;
+        }
         isDw3000InterruptAttached = false;
+        // ESP_LOGI(TAG, "DW3000 interrupt disabled");
     }
 }
 

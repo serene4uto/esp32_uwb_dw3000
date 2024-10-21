@@ -123,8 +123,8 @@ tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
     // }
 
 
-    // dwt_setrxtimeout(0);
-    // dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    dwt_setrxtimeout(0);
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
 static void
