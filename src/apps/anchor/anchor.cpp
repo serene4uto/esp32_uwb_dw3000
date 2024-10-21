@@ -104,7 +104,7 @@ void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd){
 
 static
 void anchor_rx_error_cb(const dwt_cb_data_t *rxd){
-    anchor_rx_timeout_cb(rxd);
+    // anchor_rx_timeout_cb(rxd);
 }
 
 static

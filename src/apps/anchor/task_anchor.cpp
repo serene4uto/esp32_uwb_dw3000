@@ -45,12 +45,12 @@ void anchor_master_giving_turn_task(void *arg)
         Serial.println(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].eui16);
 
 
-        uint64_t curTimerTick = timerRead(hwtimer);
-        uint64_t timeout = curTimerTick + ANCHOR_GIVING_TURN_TIMEOUT_MS * 1000;
-        // enable the timeout waiting for the ack
-        timerAlarmDisable(hwtimer);
-        timerAlarmWrite(hwtimer, timeout, false); 
-        timerAlarmEnable(hwtimer);
+        // uint64_t curTimerTick = timerRead(hwtimer);
+        // uint64_t timeout = curTimerTick + ANCHOR_GIVING_TURN_TIMEOUT_MS * 1000;
+        // // enable the timeout waiting for the ack
+        // timerAlarmDisable(hwtimer);
+        // timerAlarmWrite(hwtimer, timeout, false); 
+        // timerAlarmEnable(hwtimer);
     }
 }
 
