@@ -509,6 +509,7 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         Serial.println(distance);
 
         // Send end turn message
+        
 
         return _NO_ERR;
     }

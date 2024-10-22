@@ -29,10 +29,9 @@ typedef struct tx_pckt_s
     union {
       uint8_t               raw[STANDARD_FRAME_SIZE];   /**< Raw message buffer. */
       giving_turn_msg_t     giving_turn_msg;            /**< Giving turn message. */
-      ack_msg_t             ack_msg;                    /**< Ack message. */
-      poll_msg_t            poll_msg;                   /**< Poll message. */
       poll_broadcast_msg_t  poll_broadcast_msg;         /**< Poll broadcast message. */
       resp_msg_t            resp_msg;                   /**< Response message. */
+      end_turn_msg_t        end_turn_msg;               /**< End turn message. */
     } msg;  /**< Union of possible message types to be received. */
 
     uint8_t txFlag;  /**< Transmission flags indicating sending parameters (extended set for DW3000). */
