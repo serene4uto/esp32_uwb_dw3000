@@ -16,8 +16,8 @@
 #include "util.h"
 
 
-#define TAG_GIVING_TURN_ACK_DELAY_UUS     (1500)    /* delay before sending ACK after receiving Giving Turn message, us */
-
+// #define TAG_GIVING_TURN_ACK_DELAY_UUS     (1500)    /* delay before sending ACK after receiving Giving Turn message, us */
+#define TAG_TX_POLL_DELAY_UUS     (1500)    /* delay before sending ACK after receiving Giving Turn message, us */
 
 #define TAG_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define TAG_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
@@ -68,26 +68,25 @@ tag_tx_cb(const dwt_cb_data_t *txd)
         return;
     }
 
-    // Store the Tx timestamp of the sent packet
-    if(pTagInfo->lastTxMsg == MSG_GIVING_TURN)
-    {
-        //TODO
-    }
-
-    if(pTagInfo->lastTxMsg == MSG_ACK)
-    {
-        pTagInfo->mode = tag_info_s::RANGING_MODE;
-        pTagInfo->expectedRxMsg = MSG_NONE;
-        pTagInfo->lastTxMsg = MSG_NONE;
-        vTaskNotifyGiveFromISR(app.tagPollTask.Handle, &xHigherPriorityTaskWoken);
-    }
-
     if(pTagInfo->lastTxMsg == MSG_POLL)
     {
+        pTagInfo->lastTxMsg = MSG_NONE;
+        pTagInfo->expectedRxMsg = MSG_RESP;
+        if(pTagInfo->mode == tag_info_s::WAIT_FOR_TURN_MODE) {
+            pTagInfo->mode = tag_info_s::RANGING_MODE;
+        }
         Serial.println("Poll sent");
     }
 
-    
+    if(pTagInfo->lastTxMsg == MSG_FINAL)
+    {
+        Serial.println("Final sent");
+    }
+
+    if(pTagInfo->lastTxMsg == MSG_END_TURN)
+    {
+        Serial.println("End turn sent");
+    }
 }
 
 /* @brief     ISR layer
@@ -341,56 +340,57 @@ error_e tag_send_blink(tag_info_t *p)
 error_e tag_respond_ack(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
 {
     error_e       ret = _NO_ERR;
-    uint64_t      u64RxTs;
-    tx_pckt_t txPckt;
+    // uint64_t      u64RxTs;
+    // tx_pckt_t txPckt;
 
-    memset(&txPckt, 0, sizeof(txPckt));
+    // memset(&txPckt, 0, sizeof(txPckt));
 
-    txPckt.psduLen = sizeof(ack_msg_t);
-    txPckt.msg.ack_msg.mac.frameCtrl[0] = FC_1;
-    txPckt.msg.ack_msg.mac.frameCtrl[1] = FC_2_SHORT;
-    txPckt.msg.ack_msg.mac.seqNum = pTagInfo->seqNum;
+    // txPckt.psduLen = sizeof(ack_msg_t);
+    // txPckt.msg.ack_msg.mac.frameCtrl[0] = FC_1;
+    // txPckt.msg.ack_msg.mac.frameCtrl[1] = FC_2_SHORT;
+    // txPckt.msg.ack_msg.mac.seqNum = pTagInfo->seqNum;
 
-    txPckt.msg.ack_msg.mac.panID[0] = (uint8_t)(pTagInfo->panID & 0xff);
-    txPckt.msg.ack_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
+    // txPckt.msg.ack_msg.mac.panID[0] = (uint8_t)(pTagInfo->panID & 0xff);
+    // txPckt.msg.ack_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
 
-    // set the destination address as current target Anchor
-    memcpy(txPckt.msg.ack_msg.mac.destAddr, pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes, sizeof(pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes));
+    // // set the destination address as current target Anchor
+    // memcpy(txPckt.msg.ack_msg.mac.destAddr, pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes, sizeof(pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes));
 
-    // set the source address as the Tag current address
-    memcpy(txPckt.msg.ack_msg.mac.sourceAddr, pTagInfo->shortAddress.bytes, sizeof(pTagInfo->shortAddress.bytes));
+    // // set the source address as the Tag current address
+    // memcpy(txPckt.msg.ack_msg.mac.sourceAddr, pTagInfo->shortAddress.bytes, sizeof(pTagInfo->shortAddress.bytes));
 
-    txPckt.msg.ack_msg.message_type = MSG_ACK;
+    // txPckt.msg.ack_msg.message_type = MSG_ACK;
 
-    txPckt.txFlag               = ( DWT_START_TX_DELAYED );
-    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);
+    // txPckt.txFlag               = ( DWT_START_TX_DELAYED );
+    // txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
+    // txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);
     
 
-    // calculate the delayed time to respond
-    TS2U64_MEMCPY(u64RxTs, pRxPckt->timeStamp);
+    // // calculate the delayed time to respond
+    // TS2U64_MEMCPY(u64RxTs, pRxPckt->timeStamp);
 
-    // add delay
-    txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_GIVING_TURN_ACK_DELAY_UUS) ) >> 8; // only high 32 bits
+    // // add delay
+    // txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_GIVING_TURN_ACK_DELAY_UUS) ) >> 8; // only high 32 bits
 
-    pTagInfo->seqNum++;
-    pTagInfo->lastTxMsg = MSG_ACK;
+    // pTagInfo->seqNum++;
+    // pTagInfo->lastTxMsg = MSG_ACK;
 
-    TAG_ENTER_CRITICAL();
-    ret = tx_start(&txPckt);
-    TAG_EXIT_CRITICAL();
+    // TAG_ENTER_CRITICAL();
+    // ret = tx_start(&txPckt);
+    // TAG_EXIT_CRITICAL();
 
-    if(ret != _NO_ERR)
-    {
-        Serial.println("ACK TX failed");
-    }
+    // if(ret != _NO_ERR)
+    // {
+    //     Serial.println("ACK TX failed");
+    // }
 
     return ret;
 }
 
-error_e tag_send_poll(tag_info_t *pTagInfo) {
+error_e tag_send_poll_master(tag_info_t *pTagInfo) {
     error_e ret = _NO_ERR;
     tx_pckt_t txPckt;
+    uint64_t u64RxTs;
 
     memset(&txPckt, 0, sizeof(txPckt));
 
@@ -420,11 +420,15 @@ error_e tag_send_poll(tag_info_t *pTagInfo) {
     // set transmission parameters
     // tx immediately --> rx immediately --> rx timeout
 
-    txPckt.txFlag               = ( DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED );
-    // txPckt.txFlag               = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
-    txPckt.delayedTxTimeH_dt    = (uint32_t)util_us_to_sy(0);   // delayed TX time
-    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);   // TX to RX delay
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000);   // RX timeout
+    txPckt.txFlag               = ( DWT_START_TX_DELAYED );
+    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);
+
+    // calculate the delayed time to respond
+    TS2U64_MEMCPY(u64RxTs, pTagInfo->lastRxPckt.timeStamp);
+
+    // add delay
+    txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_TX_POLL_DELAY_UUS) ) >> 8; // only high 32 bits
 
     pTagInfo->seqNum++;
     pTagInfo->lastTxMsg = MSG_POLL;
@@ -436,10 +440,10 @@ error_e tag_send_poll(tag_info_t *pTagInfo) {
 
     TAG_EXIT_CRITICAL();
 
-    // if (ret != _NO_ERR)
-    // {
-    //     Serial.println("Error in tx_start");
-    // }
+    if (ret != _NO_ERR)
+    {
+        Serial.println("POL TX failed");
+    }
     
     return ret;
 }
@@ -476,17 +480,12 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         }
         Serial.println();
 
-        // Send ACK
-        if (tag_respond_ack(pTagInfo, pRxPckt) != _NO_ERR) {
-            // Error handling
-            dwt_writefastCMD(CMD_TXRXOFF);
-            dwt_rxenable(DWT_START_RX_IMMEDIATE);
-            dwt_setrxtimeout(0);
-            return _ERR;
+        pTagInfo->lastRxPckt = *pRxPckt;
+
+        // notify poll task to send poll message
+        if (app.tagPollTask.Handle) {
+            xTaskNotifyGive(app.tagPollTask.Handle);
         }
-
-        // Set up ranging phase in tx done callback
-
 
         return _NO_ERR;
     }

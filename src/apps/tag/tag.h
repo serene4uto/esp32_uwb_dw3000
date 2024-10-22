@@ -118,7 +118,7 @@ struct tag_info_s {
   uint8_t     curAnchorNum;  // number of anchors
   uint8_t     curAnchorIdx;  // current anchor index to range with
 
-
+  tag_rx_pckt_t lastRxPckt;  // last received packet
 };
 
 typedef struct tag_info_s tag_info_t;
@@ -138,7 +138,7 @@ error_e tag_send_blink(tag_info_t *p);
 
 error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt);
 error_e tag_respond_ack(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt);
-error_e tag_send_poll(tag_info_t *pTagInfo);
+error_e tag_send_poll_master(tag_info_t *pTagInfo);
 
 #ifdef __cplusplus
 }

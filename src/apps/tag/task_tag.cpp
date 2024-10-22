@@ -91,8 +91,6 @@ TagPollTask(void * arg)
         xSemaphoreTake(app.tagPollTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
 
         // Serial.println("Polling");
-
-        tag_send_poll(pTagInfo); // send the poll
     }
 }
 
