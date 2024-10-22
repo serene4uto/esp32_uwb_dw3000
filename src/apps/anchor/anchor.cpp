@@ -403,8 +403,8 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
 
     // set the destination address
     memcpy(txPckt.msg.resp_msg.mac.destAddr, 
-        pRxPckt->msg.poll_msg.mac.sourceAddr, 
-        sizeof(pRxPckt->msg.poll_msg.mac.sourceAddr)
+        pRxPckt->msg.poll_broadcast_msg.mac.sourceAddr, 
+        sizeof(pRxPckt->msg.poll_broadcast_msg.mac.sourceAddr)
     );
 
     // set the source address
@@ -465,11 +465,19 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
 
 error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt)
 {
-
     // MSG_POLL_BROADCAST
     if( (pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE) && 
         (pAnchorInfo->expectedRxMsg == MSG_POLL_BROADCAST)        
     ) {
+
+        // print raw message
+        for(int i = 0; i < pRxPckt->rxDataLen; i++)
+        {
+            Serial.print(pRxPckt->msg.raw[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
+
         // check conditions
         if( (pRxPckt->msg.poll_broadcast_msg.msgType != MSG_POLL_BROADCAST) || 
             ( (pRxPckt->msg.poll_broadcast_msg.mac.destAddr[0] != 0xff) && 
@@ -506,20 +514,14 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
         }
 
         Serial.println("POLL Broadcast received");
-        // print raw message
-        for(int i = 0; i < pRxPckt->rxDataLen; i++)
-        {
-            Serial.print(pRxPckt->msg.raw[i], HEX);
-            Serial.print(" ");
-        }
 
         pAnchorInfo->mode == anchor_info_s::RANGING_MODE;
 
         // send response message
-        // if(anchor_send_resp(pAnchorInfo, pRxPckt) != _NO_ERR) {
-        //     // error handling
-        //     return _ERR;
-        // }
+        if(anchor_send_resp(pAnchorInfo, pRxPckt) != _NO_ERR) {
+            // error handling
+            return _ERR;
+        }
 
         return _NO_ERR;
     }

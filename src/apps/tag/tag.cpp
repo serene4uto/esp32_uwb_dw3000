@@ -352,7 +352,7 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
     txPckt.msg.poll_broadcast_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
 
     // set the destination address as broadcast 0xFFFF
-    memset(txPckt.msg.poll_broadcast_msg.mac.destAddr, 0xff, sizeof(txPckt.msg.poll_msg.mac.destAddr));
+    memset(txPckt.msg.poll_broadcast_msg.mac.destAddr, 0xff, sizeof(txPckt.msg.poll_broadcast_msg.mac.destAddr));
 
     // set the source address
     memcpy(txPckt.msg.poll_broadcast_msg.mac.sourceAddr, 
@@ -415,6 +415,13 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
     if ((pTagInfo->mode == tag_info_t::WAIT_FOR_TURN_MODE) && 
         (pTagInfo->expectedRxMsg == MSG_GIVING_TURN)
     ) {
+        // Print raw message
+        for (int i = 0; i < pRxPckt->rxDataLen; i++) {
+            Serial.print(pRxPckt->msg.raw[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
+
         // Check if the message type is MSG_GIVING_TURN
         if ((pRxPckt->msg.giving_turn_msg.message_type != MSG_GIVING_TURN ) ||
             (memcmp(pRxPckt->msg.giving_turn_msg.mac.destAddr, 
@@ -429,12 +436,11 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         }
 
         Serial.println("Giving Turn Received");
-        // Print raw message
-        for (int i = 0; i < pRxPckt->rxDataLen; i++) {
-            Serial.print(pRxPckt->msg.raw[i], HEX);
-            Serial.print(" ");
-        }
-        Serial.println();
+
+        // Check current queue size
+        // if (uxQueueMessagesWaiting(pTagInfo->rxPktQueue) > 0) {
+        //     Serial.println("Queue is not empty");
+        // }
 
         // send broadcast poll message
 
@@ -449,6 +455,13 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
     if ((pTagInfo->mode == tag_info_t::RANGING_MODE) && 
         (pTagInfo->expectedRxMsg == MSG_RESP)
     ) {
+        // print raw message
+        for (int i = 0; i < pRxPckt->rxDataLen; i++) {
+            Serial.print(pRxPckt->msg.raw[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
+
         // TODO: checking if source anchor is in the list of anchors
         if ((pRxPckt->msg.resp_msg.msgType != MSG_RESP) ||
             (memcmp(pRxPckt->msg.resp_msg.mac.destAddr, 
@@ -462,11 +475,7 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
 
         Serial.println("RESP message received");
 
-        // print raw message
-        for (int i = 0; i < pRxPckt->rxDataLen; i++) {
-            Serial.print(pRxPckt->msg.raw[i], HEX);
-            Serial.print(" ");
-        }
+
 
         //TODO: calculate the distance
 

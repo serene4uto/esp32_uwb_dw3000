@@ -81,7 +81,7 @@ void anchor_rx_task(void *arg)
 static
 void anchor_setup_tasks(void) 
 {
-    xTaskCreate(anchor_rx_task, "AnchorRxTask", 1024, NULL, ANCHOR_TASK_RX_PRIO, &app.anchor_rx_task.Handle);
+    xTaskCreate(anchor_rx_task, "AnchorRxTask", 4096, NULL, ANCHOR_TASK_RX_PRIO, &app.anchor_rx_task.Handle);
     app.anchor_rx_task.MutexId = xSemaphoreCreateMutex();
 
     xTaskCreate(anchor_master_giving_turn_task, "AnchorMasterGivingTurnTask", 1024, NULL, ANCHOR_TASK_TOKEN_PRIO, &app.anchor_master_giving_turn_task.Handle);
