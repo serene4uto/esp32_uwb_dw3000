@@ -70,10 +70,10 @@ tag_tx_cb(const dwt_cb_data_t *txd)
 
     if(pTagInfo->lastTxMsg == MSG_POLL_BROADCAST)
     {
-        dwt_readtxtimestamp(pTagInfo->pollBroadcastTx_ts);
+        dwt_readtxtimestamp(pTagInfo->lastPollBrdcastTxTs);
         pTagInfo->lastTxMsg = MSG_NONE;
         pTagInfo->expectedRxMsg = MSG_RESP;
-        if(pTagInfo->mode == tag_info_s::WAIT_FOR_TURN_MODE) {
+        if(pTagInfo->mode != tag_info_s::RANGING_MODE) {
             pTagInfo->mode = tag_info_s::RANGING_MODE;
         }
         Serial.println("Poll Broadcast sent");
@@ -132,12 +132,16 @@ tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
     }
 
     if(pTagInfo->mode == tag_info_s::RANGING_MODE) {
+        // if any timeout occurs in Ranging mode, abort the ranging process and wait for the next turn
         pTagInfo->mode = tag_info_s::WAIT_FOR_TURN_MODE;
+        pTagInfo->expectedRxMsg = MSG_GIVING_TURN;
+        pTagInfo->lastTxMsg = MSG_NONE;
+
+        Serial.println("Rx Timeout, waiting for turn");
     }
 
     dwt_setrxtimeout(0);
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
-
 }
 
 static void
@@ -374,10 +378,9 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
 
     // set transmission parameters
     // tx immediately --> rx immediately --> rx timeout
-
     txPckt.txFlag               = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
     txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000);
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000); // timeout for the resp msg
 
     // calculate the delayed time to respond
     TS2U64_MEMCPY(u64RxTs, prxPckt->timeStamp);
@@ -397,6 +400,7 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
 
     if (ret != _NO_ERR)
     {
+        //TODO: error handling
         Serial.println("POLL Broadcast TX failed");
     }
     
@@ -417,7 +421,7 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
                     pTagInfo->shortAddress.bytes, 
                     sizeof(pTagInfo->shortAddress.bytes)) != 0) 
         ) {
-
+            //TODO: error handling
             dwt_writefastCMD(CMD_TXRXOFF);
             dwt_rxenable(DWT_START_RX_IMMEDIATE);
             dwt_setrxtimeout(0);
@@ -435,9 +439,37 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         // send broadcast poll message
 
         if (tag_send_poll_broadcast(pTagInfo, pRxPckt) != _NO_ERR) {
-            // error handling
+            // TODO: error handling
             return _ERR;
         }
+
+        return _NO_ERR;
+    }
+
+    if ((pTagInfo->mode == tag_info_t::RANGING_MODE) && 
+        (pTagInfo->expectedRxMsg == MSG_RESP)
+    ) {
+        // TODO: checking if source anchor is in the list of anchors
+        if ((pRxPckt->msg.resp_msg.msgType != MSG_RESP) ||
+            (memcmp(pRxPckt->msg.resp_msg.mac.destAddr, 
+                    pTagInfo->shortAddress.bytes, 
+                    sizeof(pTagInfo->shortAddress.bytes)) != 0) 
+        ) {
+            //TODO: error handling
+            Serial.println("Error in RESP message");
+            return _ERR;
+        }
+
+        Serial.println("RESP message received");
+
+        // print raw message
+        for (int i = 0; i < pRxPckt->rxDataLen; i++) {
+            Serial.print(pRxPckt->msg.raw[i], HEX);
+            Serial.print(" ");
+        }
+
+        //TODO: calculate the distance
+
 
         return _NO_ERR;
     }

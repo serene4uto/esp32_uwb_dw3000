@@ -45,6 +45,7 @@ struct tag_rx_pckt_s
       ack_msg_t             ack_msg;                    /**< Ack message. */
       poll_msg_t            poll_msg;                   /**< Poll message. */
       poll_broadcast_msg_t  poll_broadcast_msg;         /**< Poll broadcast message. */
+      resp_msg_t            resp_msg;                   /**< Response message. */
     } msg;  /**< Union of possible message types to be received. */
 
   uint8_t timeStamp[TS_40B_SIZE];   /* Full TimeStamp */
@@ -83,19 +84,7 @@ struct tag_info_s {
 
   uint16_t panID; // PAN ID
 
-
-
   QueueHandle_t rxPktQueue = NULL; // queue of received packets
-
-  /* ranging variables */
-  struct {
-      /* MAC sequence number, increases on every tx_start */
-      uint8_t seqNum;
-
-      /* Application DW_TX_IRQ source indicator */
-      uwb_msg_e_t lastTxMsg;
-  };
-
 
   /* Tag's crystal clock offset trimming */
   int16_t     clkOffset_pphm;     // ???
@@ -111,22 +100,29 @@ struct tag_info_s {
     RANGING_MODE
   } mode;
 
+  uint8_t seqNum; // sequence number, increases on every tx_start
+  uwb_msg_e_t lastTxMsg; // last transmitted message type
   uwb_msg_e_t expectedRxMsg; // expected message type
 
   // Anchor management
   struct {
     dev_eui16_t shortAddr;
 
-    // timing parameters
+    // timing params
     uint16_t respDelay;
-    
+
+    uint8_t lastRespRxTs[TS_40B_SIZE]; // last response message reception timestamp for the anchor
+
+    // last distance
+    double lastDist;
+
   } anchorList[TAG_MAX_ANCHORS]; // list of anchors
-  uint8_t     curAnchorNum;  // number of anchors
-  uint8_t     curAnchorIdx;  // current anchor index to range with
 
-  // timing
-  uint8_t   pollBroadcastTx_ts[TS_40B_SIZE]; // Poll Broadcast Tx timestamp
+  uint8_t curAnchorNum;  // number of anchors
+  uint8_t curAnchorIdx;  // current anchor index to range with
 
+  // common timing params
+  uint8_t lastPollBrdcastTxTs[TS_40B_SIZE]; // last Poll Broadcast Tx timestamp
 };
 
 typedef struct tag_info_s tag_info_t;
