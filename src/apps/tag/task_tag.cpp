@@ -15,8 +15,8 @@
 
 
 #define TAG_TASK_BLINK_PRIO    (5)
-#define TAG_TASK_TWR_POLL_PRIO (10)
-#define TAG_TASK_RX_PRIO       (10)
+#define TAG_TASK_POLL_PRIO      (10)
+#define TAG_TASK_RX_PRIO        (10)
 
 #define BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */
 
@@ -90,7 +90,9 @@ TagPollTask(void * arg)
 
         xSemaphoreTake(app.tagPollTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
 
-        Serial.println("Polling");
+        // Serial.println("Polling");
+
+        tag_send_poll(pTagInfo); // send the poll
     }
 }
 
@@ -136,18 +138,17 @@ static void tag_setup_tasks(void)
     // xTaskCreate(TagBlinkTask, "BlinkTask", 1024, NULL, TAG_TASK_BLINK_PRIO, &app.blinkTask.Handle);
     // app.blinkTask.MutexId = xSemaphoreCreateMutex();
 
-    // xTaskCreate(TagPollTask, "PollTask", 1024, NULL, TAG_TASK_TWR_POLL_PRIO, &app.pollTask.Handle);
-    // app.pollTask.MutexId = xSemaphoreCreateMutex();
+    xTaskCreate(TagPollTask, "TagPollTask", 1024, NULL, TAG_TASK_POLL_PRIO, &app.tagPollTask.Handle);
+    app.tagPollTask.MutexId = xSemaphoreCreateMutex();
 
     xTaskCreate(tag_rx_task, "TagRxTask", 1024, NULL, TAG_TASK_RX_PRIO, &app.tagRxTask.Handle);
     app.tagRxTask.MutexId = xSemaphoreCreateMutex();
 
-    // if( (app.blinkTask.Handle == NULL)   ||\
-    //     (app.pollTask. Handle == NULL)   ||\
-    //     (app.rxTask.   Handle == NULL))
-    // {
-    //     //TODO: handle error
-    // }
+    if( (app.tagPollTask.Handle == NULL)   ||
+        (app.tagRxTask.Handle == NULL))
+    {
+        //TODO: handle error
+    }
 
 }
 

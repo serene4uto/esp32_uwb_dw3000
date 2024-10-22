@@ -3,10 +3,9 @@
  *
  * @brief     UWB message frames definitions and typedefs
  *
- * @author    Decawave
+ * @author    Nguyen Ha Trung
  *
- * @attention Copyright 2017-2019 (c) Decawave Ltd, Dublin, Ireland.
- *            All rights reserved.
+ * @attention //TODO: Add attention here
  *
  */
 
@@ -51,15 +50,19 @@ extern "C" {
 #define RC_VERSION_PDOA            (3)
 #define RC_VERSION_DR              (4)
 
+
+#define POLL_BROADCAST_MAX_ANCHORS  (8)
+
 typedef enum {
     MSG_NONE = 0x00,
     MSG_GIVING_TURN = 0x01,
     MSG_ACK = 0x02,
     MSG_POLL = 0x03,
-    MSG_RESP = 0x04,
-    MSG_FINAL = 0x05,
-    MSG_REPORT = 0x06,
-    MSG_END_TURN = 0x07,
+    MSG_POLL_BROADCAST = 0x04,
+    MSG_RESP = 0x05,
+    MSG_FINAL = 0x06,
+    MSG_REPORT = 0x07,
+    MSG_END_TURN = 0x08,
 } uwb_msg_e_t;
 
 typedef enum {
@@ -126,9 +129,30 @@ typedef struct
 {
     mac_header_ss_t mac;
     uint8_t message_type;
-    uint8_t fcs[2] ;  
+    uint8_t fcs[2];  
 }__attribute__((packed))
 ack_msg_t;
+
+typedef struct
+{
+    mac_header_ss_t mac;
+    uint8_t msgType;
+    uint8_t respTime[2];
+    uint8_t fcs[2];
+}__attribute__((packed))
+poll_msg_t;
+
+typedef struct
+{
+    mac_header_ss_t mac;
+    uint8_t msgType;
+    struct {
+        uint8_t shortAddr[ADDR_BYTE_SIZE_S];
+        uint8_t respTime[2];
+    } anchorSchedule[POLL_BROADCAST_MAX_ANCHORS];
+    uint8_t fcs[2];
+}__attribute__((packed))
+poll_broadcast_msg_t;
 
 
 #ifdef __cplusplus

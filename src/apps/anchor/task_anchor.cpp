@@ -39,20 +39,15 @@ void anchor_master_giving_turn_task(void *arg)
 
         xSemaphoreTake(app.anchor_master_giving_turn_task.MutexId, portMAX_DELAY); // we do not want the task can be deleted in the middle of operation
 
-        // dwt_writefastCMD(CMD_TXRXOFF); // stop the receiver
-
         anchor_master_give_turn(pAnchorInfo);
 
-        Serial.print("Anchor Master giving turn to Tag: ");
-        Serial.println(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].eui16);
-
-
-        // uint64_t curTimerTick = timerRead(hwtimer);
-        // uint64_t timeout = curTimerTick + ANCHOR_GIVING_TURN_TIMEOUT_MS * 1000;
-        // // enable the timeout waiting for the ack
-        // timerAlarmDisable(hwtimer);
-        // timerAlarmWrite(hwtimer, timeout, false); 
-        // timerAlarmEnable(hwtimer);
+        // Serial.print("Giving turn to Tag: ");
+        // for(int i = 0; i < sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes); i++)
+        // {
+        //     Serial.print(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[i], HEX);
+        //     Serial.print(" ");
+        // }
+        // Serial.println();
     }
 }
 
@@ -75,10 +70,9 @@ void anchor_rx_task(void *arg)
 
         xSemaphoreTake(app.anchor_rx_task.MutexId, portMAX_DELAY); // we do not want the task can be deleted in the middle of operation
 
-        Serial.println("Anchor Rx Task");
         xQueueReceive(pAnchorInfo->rxPcktQueue, &rxPckt, portMAX_DELAY);
 
-        // anchor_process_rx_pckt(pAnchorInfo, &rxPckt);
+        anchor_process_rx_pckt(pAnchorInfo, &rxPckt);
 
     }
 }

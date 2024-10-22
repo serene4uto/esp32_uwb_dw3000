@@ -40,9 +40,11 @@ struct tag_rx_pckt_s
   uint16_t rxDataLen;
 
     union {
-      uint8_t             raw[STANDARD_FRAME_SIZE];   /**< Raw message buffer. */
-      giving_turn_msg_t   giving_turn_msg;            /**< Giving turn message. */
-      ack_msg_t           ack_msg;                    /**< Ack message. */
+      uint8_t               raw[STANDARD_FRAME_SIZE];   /**< Raw message buffer. */
+      giving_turn_msg_t     giving_turn_msg;            /**< Giving turn message. */
+      ack_msg_t             ack_msg;                    /**< Ack message. */
+      poll_msg_t            poll_msg;                   /**< Poll message. */
+      poll_broadcast_msg_t  poll_broadcast_msg;         /**< Poll broadcast message. */
     } msg;  /**< Union of possible message types to be received. */
 
   uint8_t timeStamp[TS_40B_SIZE];   /* Full TimeStamp */
@@ -136,6 +138,7 @@ error_e tag_send_blink(tag_info_t *p);
 
 error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt);
 error_e tag_respond_ack(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt);
+error_e tag_send_poll(tag_info_t *pTagInfo);
 
 #ifdef __cplusplus
 }

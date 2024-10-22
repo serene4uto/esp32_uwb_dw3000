@@ -30,9 +30,11 @@ struct anchor_rx_pckt_s
     uint16_t        rxDataLen;
 
     union {
-      uint8_t             raw[STANDARD_FRAME_SIZE];   /**< Raw message buffer. */
-      giving_turn_msg_t   giving_turn_msg;            /**< Giving turn message. */
-      ack_msg_t           ack_msg;                    /**< Ack message. */
+      uint8_t               raw[STANDARD_FRAME_SIZE];   /**< Raw message buffer. */
+      giving_turn_msg_t     giving_turn_msg;            /**< Giving turn message. */
+      ack_msg_t             ack_msg;                    /**< Ack message. */
+      poll_msg_t            poll_msg;                   /**< Poll message. */
+      poll_broadcast_msg_t  poll_broadcast_msg;         /**< Poll broadcast message. */
     } msg;  /**< Union of possible message types to be received. */
 
     uint8_t     timeStamp[TS_40B_SIZE]; /* Timestamp of the received frame */
@@ -49,18 +51,18 @@ struct anchor_info_s
 {
     /* Unique long Address, used at the discovery phase before Range Init reception */
     union {
-        uint8_t  euiLong[8];
-        uint64_t eui64;
-    };
+      uint8_t  bytes[8];
+      uint64_t eui64;
+    } longAddress;
 
     /* Unique short Address, uses at the ranging phase
      * valid for low-endian compiler.
      * */
     union    {
-       uint8_t     euiShort[2];
-       uint16_t    eui16;
-    };
-
+      uint8_t     bytes[2];
+      uint16_t    eui16;
+    } shortAddress;
+    
     uint16_t    panID;          // PAN ID
 
     QueueHandle_t rxPcktQueue = NULL;  // circular Buffer of received Rx packets

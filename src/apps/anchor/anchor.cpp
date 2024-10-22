@@ -13,6 +13,10 @@
 #include "common_n.h"
 #include "util.h"
 
+#define ANCHOR_GIVING_TURN_ACK_TIMEOUT_US               (1000000)          /* timeout for waiting ACK after sending Giving Turn message, us */
+#define ANCHOR_MASTER_POLL_TIMEOUT_US                   (1000000)       /* timeout for waiting POLL after finishing Giving turn phase, us */
+#define ANCHOR_POLL_TIMEOUT_US                          (0)          /* timeout for waiting POLL */
+
 #define ANCHOR_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define ANCHOR_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
 
@@ -42,6 +46,13 @@ void anchor_tx_cb(const dwt_cb_data_t *txd){
     {
         //TODO
     }
+
+
+    if (pAnchorInfo->lastTxMsg == MSG_RESP)
+    {
+        //TODO
+    }
+
 
 }
 
@@ -109,7 +120,7 @@ void anchor_rx_error_cb(const dwt_cb_data_t *rxd){
 
 static
 void anchor_spi_rdy_cb(const dwt_cb_data_t *rxd){
-    Serial.println("SPI Ready");
+
 }
 
 error_e anchor_process_init(void) {
@@ -128,9 +139,9 @@ error_e anchor_process_init(void) {
 
 
     // Set the EUI16 for current anchor
-    pAnchorInfo->eui16 = ANCHOR_ADDR_EUI16;
+    pAnchorInfo->shortAddress.eui16 = ANCHOR_ADDR_EUI16;
 
-    if(pAnchorInfo->eui16 == TWR_ANCHOR_MASTER_EUI16)
+    if(pAnchorInfo->shortAddress.eui16 == TWR_ANCHOR_MASTER_EUI16)
     {
         pAnchorInfo->isMaster = true;
     }
@@ -183,8 +194,8 @@ error_e anchor_process_init(void) {
     p.frameFilterMode   = (DWT_FF_DATA_EN | DWT_FF_ACK_EN); //FIXME
     p.txAntDelay  = app.pConfig->runtime_params.ant_tx_a;
     p.rxAntDelay  = app.pConfig->runtime_params.ant_rx_a;
-    p.panId       = pAnchorInfo->panID;//PanID : does not matter : DWT_FF_NOTYPE_EN : will be reconfigured on reception of RI message
-    p.shortadd    = pAnchorInfo->eui16;//ShortAddr
+    p.panId       = pAnchorInfo->panID;                 //PanID : does not matter : DWT_FF_NOTYPE_EN : will be reconfigured on reception of RI message
+    p.shortadd    = pAnchorInfo->shortAddress.eui16;    //ShortAddr
 
     rxtx_configure(&p);
 
@@ -234,6 +245,24 @@ error_e anchor_process_init(void) {
 
     ANCHOR_EXIT_CRITICAL();
 
+    // print current anchor address
+    Serial.print("Current Anchor: ");
+    for(int i = 0; i < sizeof(pAnchorInfo->shortAddress.bytes); i++)
+    {
+        Serial.print(pAnchorInfo->shortAddress.bytes[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+
+    // print current target tag address
+    Serial.print("Current Tag: ");
+    for(int i = 0; i < sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes); i++)
+    {
+        Serial.print(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+
     return _NO_ERR;
 }
 
@@ -277,12 +306,16 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     txPckt.msg.giving_turn_msg.mac.panID[1] = (uint8_t)(pAnchorInfo->panID >> 8);
 
     // set the destination address
-    txPckt.msg.giving_turn_msg.mac.destAddr[0] = (uint8_t)(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[0]);
-    txPckt.msg.giving_turn_msg.mac.destAddr[1] = (uint8_t)(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[1]);
+    memcpy(txPckt.msg.giving_turn_msg.mac.destAddr, 
+        pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes, 
+        sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes)
+    );
 
     // set the source address
-    txPckt.msg.giving_turn_msg.mac.sourceAddr[0] = (uint8_t)(pAnchorInfo->eui16 & 0xff);
-    txPckt.msg.giving_turn_msg.mac.sourceAddr[1] = (uint8_t)(pAnchorInfo->eui16 >> 8);
+    memcpy(txPckt.msg.giving_turn_msg.mac.sourceAddr, 
+        pAnchorInfo->shortAddress.bytes, 
+        sizeof(pAnchorInfo->shortAddress.bytes)
+    );
 
     // set the message type
     txPckt.msg.giving_turn_msg.message_type = MSG_GIVING_TURN;
@@ -293,7 +326,7 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     txPckt.txFlag               = ( DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED );
     txPckt.delayedTxTimeH_dt    = (uint32_t)util_us_to_sy(0);   // delayed TX time
     txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);   // TX to RX delay
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000);   // RX timeout
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(ANCHOR_GIVING_TURN_ACK_TIMEOUT_US);   // RX timeout
     
     pAnchorInfo->seqNum++;
     pAnchorInfo->lastTxMsg = MSG_GIVING_TURN;
@@ -316,25 +349,166 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
 
 error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt)
 {
-    error_e ret = _NO_ERR;
 
-    if(pAnchorInfo->expectedRxMsg == MSG_ACK && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
-    {
-        if(pRxPckt->msg.ack_msg.message_type != MSG_ACK)
+    // TODO: optimize conditions
+    if( (pAnchorInfo->expectedRxMsg == MSG_ACK) && 
+        (pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE) &&
+        pAnchorInfo->isMaster
+    ) {
+        // check conditions
+        if( (pRxPckt->msg.ack_msg.message_type != MSG_ACK) ||
+            (memcmp(pRxPckt->msg.ack_msg.mac.destAddr, 
+                    pAnchorInfo->shortAddress.bytes, 
+                    sizeof(pAnchorInfo->shortAddress.bytes)) != 0) ||
+            (memcmp(pRxPckt->msg.ack_msg.mac.sourceAddr, 
+                    pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes, 
+                    sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes)) != 0)
+        )
         {
+            // Error handling: wait for ack again
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            dwt_setrxtimeout(util_us_to_sy(ANCHOR_GIVING_TURN_ACK_TIMEOUT_US)); 
+            return _ERR; //TODO: handle error
+        }
+        
+        Serial.println("ACK received");
+
+        // print raw message
+        for(int i = 0; i < pRxPckt->rxDataLen; i++)
+        {
+            Serial.print(pRxPckt->msg.raw[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
+
+        // ranging using poll message
+        pAnchorInfo->mode == anchor_info_s::RANGING_MODE;
+        pAnchorInfo->expectedRxMsg = MSG_POLL;
+        pAnchorInfo->lastTxMsg = MSG_NONE;
+
+        // wait for POLL message
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        // dwt_setrxtimeout(util_us_to_sy(ANCHOR_MASTER_POLL_TIMEOUT_US));
+        dwt_setrxtimeout(util_us_to_sy(0));
+        
+        return _NO_ERR;
+    }
+
+    // ----------------------------------------------------------------------------
+    // Ranging phase
+
+    // MSG_POLL
+    if( (pAnchorInfo->mode == anchor_info_s::RANGING_MODE) && 
+        (pAnchorInfo->expectedRxMsg == MSG_POLL)        
+    ) {
+        // check conditions
+        if( (pRxPckt->msg.poll_msg.msgType != MSG_POLL) || 
+            (memcmp(pRxPckt->msg.poll_msg.mac.destAddr,
+                    pAnchorInfo->shortAddress.bytes, 
+                    sizeof(pAnchorInfo->shortAddress.bytes)) != 0) ||
+            (memcmp(pRxPckt->msg.poll_msg.mac.sourceAddr, 
+                    pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes, 
+                    sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes)) != 0)
+        ) {
+            // Error handling: wait for poll again
+            if(pAnchorInfo->isMaster) {
+                // back to giving turn mode
+                pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE; 
+                pAnchorInfo->expectedRxMsg = MSG_NONE;
+                pAnchorInfo->lastTxMsg = MSG_NONE;
+                // delay for a random 1-2 seconds
+                vTaskDelay(pdMS_TO_TICKS(1000 + (rand() % 1000)));
+                // give turn to the next tag
+                pAnchorInfo->curTagIdx++;
+                if (pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
+                    pAnchorInfo->curTagIdx = 0; // reset the index
+                }
+                // signal the Anchor Master giving turn task
+                xTaskNotifyGive(app.anchor_master_giving_turn_task.Handle); 
+            } 
+            else {
+                dwt_rxenable(DWT_START_RX_IMMEDIATE);
+                dwt_setrxtimeout(util_us_to_sy(ANCHOR_POLL_TIMEOUT_US));
+            }
+
+            Serial.println("Error in POLL message");
+
             return _ERR; //TODO: handle error
         }
 
-        Serial.println("ACK received");
+        Serial.println("POLL received");
+        // print raw message
+        for(int i = 0; i < pRxPckt->rxDataLen; i++)
+        {
+            Serial.print(pRxPckt->msg.raw[i], HEX);
+            Serial.print(" ");
+        }
 
-        // disable ack timeout timer
-        // timerAlarmDisable(hwtimer);
-        // pAnchorInfo->mode == anchor_info_s::RANGING_MODE;
-    
+        return _NO_ERR;
+    }
+
+    // MSG_FINAL
+    if( (pAnchorInfo->mode == anchor_info_s::RANGING_MODE) && 
+        (pAnchorInfo->expectedRxMsg == MSG_FINAL)        
+    ) {
+        // check conditions
+        // if( (pRxPckt->msg.final_msg.msgType != MSG_FINAL) || 
+        //     (memcmp(pRxPckt->msg.final_msg.mac.destAddr,
+        //             pAnchorInfo->shortAddress.bytes, 
+        //             sizeof(pAnchorInfo->shortAddress.bytes)) != 0) ||
+        //     (memcmp(pRxPckt->msg.final_msg.mac.sourceAddr, 
+        //             pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes, 
+        //             sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes)) != 0)
+        // ) {
+        //     // Error handling: wait for final again
+        //     dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        //     dwt_setrxtimeout(util_us_to_sy(ANCHOR_POLL_TIMEOUT_US));
+        //     return _ERR; //TODO: handle error
+        // }
+
+        // Serial.println("FINAL received");
+        // // print raw message
+        // for(int i = 0; i < pRxPckt->rxDataLen; i++)
+        // {
+        //     Serial.print(pRxPckt->msg.raw[i], HEX);
+        //     Serial.print(" ");
+        // }
+
+        // return _NO_ERR;
+    }
+
+    // MSG_END_TURN
+    if( (pAnchorInfo->mode == anchor_info_s::RANGING_MODE) && 
+        (pAnchorInfo->expectedRxMsg == MSG_END_TURN)        
+    ) {
+        // check conditions
+        // if( (pRxPckt->msg.end_turn_msg.msgType != MSG_END_TURN) || 
+        //     (memcmp(pRxPckt->msg.end_turn_msg.mac.destAddr,
+        //             pAnchorInfo->shortAddress.bytes, 
+        //             sizeof(pAnchorInfo->shortAddress.bytes)) != 0) ||
+        //     (memcmp(pRxPckt->msg.end_turn_msg.mac.sourceAddr, 
+        //             pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes, 
+        //             sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes)) != 0)
+        // ) {
+        //     // Error handling: wait for end turn again
+        //     dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        //     dwt_setrxtimeout(util_us_to_sy(ANCHOR_POLL_TIMEOUT_US));
+        //     return _ERR; //TODO: handle error
+        // }
+
+        // Serial.println("END_TURN received");
+        // // print raw message
+        // for(int i = 0; i < pRxPckt->rxDataLen; i++)
+        // {
+        //     Serial.print(pRxPckt->msg.raw[i], HEX);
+        //     Serial.print(" ");
+        // }
+
+        // return _NO_ERR;
     }
 
 
-    return ret;
+    return _NO_ERR;
 }
 
 
