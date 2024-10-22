@@ -146,6 +146,7 @@ typedef struct
 {
     mac_header_ss_t mac;
     uint8_t msgType;
+    uint8_t numAnchors;
     struct {
         uint8_t shortAddr[ADDR_BYTE_SIZE_S];
         uint8_t respTime[2];
@@ -153,6 +154,16 @@ typedef struct
     uint8_t fcs[2];
 }__attribute__((packed))
 poll_broadcast_msg_t;
+
+typedef struct
+{
+    mac_header_ss_t mac;
+    uint8_t msgType;
+    uint8_t pollRxTs[4];
+    uint8_t respTxTs[4];
+    uint8_t fcs[2];
+}__attribute__((packed))
+resp_msg_t;
 
 
 #ifdef __cplusplus

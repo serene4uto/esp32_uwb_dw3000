@@ -83,6 +83,9 @@ struct anchor_info_s
     uint8_t curTagNum; // number of tags
     dev_eui16_t tagList[ANCHOR_MASTER_MAX_TAGS]; // list of tags
     uint8_t curTagIdx; // current tag index
+
+    // timing
+    uint32_t endTurnTimeout; // timeout for the end turn message
 };
 
 typedef struct anchor_info_s anchor_info_t; 
@@ -99,5 +102,7 @@ void    anchor_process_terminate(void);
 error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo);
 
 error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt);
+
+error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt);
 
 #endif /* __ANCHOR_M__H__ */

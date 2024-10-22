@@ -32,6 +32,7 @@ typedef struct tx_pckt_s
       ack_msg_t             ack_msg;                    /**< Ack message. */
       poll_msg_t            poll_msg;                   /**< Poll message. */
       poll_broadcast_msg_t  poll_broadcast_msg;         /**< Poll broadcast message. */
+      resp_msg_t            resp_msg;                   /**< Response message. */
     } msg;  /**< Union of possible message types to be received. */
 
     uint8_t txFlag;  /**< Transmission flags indicating sending parameters (extended set for DW3000). */

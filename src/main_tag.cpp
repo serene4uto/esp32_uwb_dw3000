@@ -61,6 +61,9 @@ void main_tag()
   }
   Serial.println("INIT OK");
 
+
+  Serial.println("Tag process init");
+
   
   tag_terminate();
 

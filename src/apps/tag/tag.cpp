@@ -17,7 +17,7 @@
 
 
 // #define TAG_GIVING_TURN_ACK_DELAY_UUS     (1500)    /* delay before sending ACK after receiving Giving Turn message, us */
-#define TAG_TX_POLL_DELAY_UUS     (1500)    /* delay before sending ACK after receiving Giving Turn message, us */
+#define TAG_TX_POLL_DELAY_UUS     (2000)    /* delay before sending POLL after receiving Giving Turn message, us */
 
 #define TAG_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define TAG_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
@@ -68,19 +68,15 @@ tag_tx_cb(const dwt_cb_data_t *txd)
         return;
     }
 
-    if(pTagInfo->lastTxMsg == MSG_POLL)
+    if(pTagInfo->lastTxMsg == MSG_POLL_BROADCAST)
     {
+        dwt_readtxtimestamp(pTagInfo->pollBroadcastTx_ts);
         pTagInfo->lastTxMsg = MSG_NONE;
         pTagInfo->expectedRxMsg = MSG_RESP;
         if(pTagInfo->mode == tag_info_s::WAIT_FOR_TURN_MODE) {
             pTagInfo->mode = tag_info_s::RANGING_MODE;
         }
-        Serial.println("Poll sent");
-    }
-
-    if(pTagInfo->lastTxMsg == MSG_FINAL)
-    {
-        Serial.println("Final sent");
+        Serial.println("Poll Broadcast sent");
     }
 
     if(pTagInfo->lastTxMsg == MSG_END_TURN)
@@ -197,12 +193,18 @@ error_e tag_process_init(void)
 
 
     /* Hard code the known anchors for the demo */
-    pTagInfo->anchorList[0].eui16 = (uint16_t)TWR_ANCHOR_MASTER_EUI16;
-    pTagInfo->anchorList[1].eui16 = (uint16_t)TWR_ANCHOR_DEV1_EUI16;
-    pTagInfo->anchorList[2].eui16 = (uint16_t)TWR_ANCHOR_DEV2_EUI16;
-    pTagInfo->anchorList[3].eui16 = (uint16_t)TWR_ANCHOR_DEV3_EUI16;
-    pTagInfo->curAnchorNum = 4;
+    pTagInfo->anchorList[0].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_MASTER_EUI16;
+    // pTagInfo->anchorList[1].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV1_EUI16;
+    // pTagInfo->anchorList[2].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV2_EUI16;
+    // pTagInfo->anchorList[3].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV3_EUI16;
+    pTagInfo->curAnchorNum = 1;
     pTagInfo->curAnchorIdx = 0; // anchor master position
+
+    // fixed respDelay for each anchor
+    for(uint8_t i=0; i<pTagInfo->curAnchorNum; i++)
+    {
+        pTagInfo->anchorList[i].respDelay = (2*i+1)* 7000; //DEFAULT_REPLY_DELAY_TIME_US
+    }
 
     pTagInfo->panID = TAG_DEFAULT_PANID;
 
@@ -299,13 +301,6 @@ void tag_process_start(void)
 {
     enable_dw3000_irq();  /**< enable DW3000 IRQ to start  */
 
-    // start timer
-    // timerAttachInterrupt(hwtimer, &tag_hw_timer_cb, true); 
-
-    // timerAlarmDisable(hwtimer);
-    // // hard-coding the start of the first blink in 10ms after starting of the Tag application
-    // timerAlarmWrite(hwtimer, 10000, false);
-    // timerAlarmEnable(hwtimer);
 }
 
 /* @brief   app level
@@ -337,101 +332,61 @@ error_e tag_send_blink(tag_info_t *p)
     return ret;
 }
 
-error_e tag_respond_ack(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
-{
-    error_e       ret = _NO_ERR;
-    // uint64_t      u64RxTs;
-    // tx_pckt_t txPckt;
-
-    // memset(&txPckt, 0, sizeof(txPckt));
-
-    // txPckt.psduLen = sizeof(ack_msg_t);
-    // txPckt.msg.ack_msg.mac.frameCtrl[0] = FC_1;
-    // txPckt.msg.ack_msg.mac.frameCtrl[1] = FC_2_SHORT;
-    // txPckt.msg.ack_msg.mac.seqNum = pTagInfo->seqNum;
-
-    // txPckt.msg.ack_msg.mac.panID[0] = (uint8_t)(pTagInfo->panID & 0xff);
-    // txPckt.msg.ack_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
-
-    // // set the destination address as current target Anchor
-    // memcpy(txPckt.msg.ack_msg.mac.destAddr, pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes, sizeof(pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes));
-
-    // // set the source address as the Tag current address
-    // memcpy(txPckt.msg.ack_msg.mac.sourceAddr, pTagInfo->shortAddress.bytes, sizeof(pTagInfo->shortAddress.bytes));
-
-    // txPckt.msg.ack_msg.message_type = MSG_ACK;
-
-    // txPckt.txFlag               = ( DWT_START_TX_DELAYED );
-    // txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
-    // txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);
-    
-
-    // // calculate the delayed time to respond
-    // TS2U64_MEMCPY(u64RxTs, pRxPckt->timeStamp);
-
-    // // add delay
-    // txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_GIVING_TURN_ACK_DELAY_UUS) ) >> 8; // only high 32 bits
-
-    // pTagInfo->seqNum++;
-    // pTagInfo->lastTxMsg = MSG_ACK;
-
-    // TAG_ENTER_CRITICAL();
-    // ret = tx_start(&txPckt);
-    // TAG_EXIT_CRITICAL();
-
-    // if(ret != _NO_ERR)
-    // {
-    //     Serial.println("ACK TX failed");
-    // }
-
-    return ret;
-}
-
-error_e tag_send_poll_master(tag_info_t *pTagInfo) {
+error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
     error_e ret = _NO_ERR;
     tx_pckt_t txPckt;
     uint64_t u64RxTs;
 
     memset(&txPckt, 0, sizeof(txPckt));
 
-    txPckt.psduLen = sizeof(poll_msg_t);
-    txPckt.msg.poll_msg.mac.frameCtrl[0] = FC_1;
-    txPckt.msg.poll_msg.mac.frameCtrl[1] = FC_2_SHORT;
+    txPckt.psduLen = sizeof(poll_broadcast_msg_t);
+    txPckt.msg.poll_broadcast_msg.mac.frameCtrl[0] = FC_1;
+    txPckt.msg.poll_broadcast_msg.mac.frameCtrl[1] = FC_2_SHORT;
 
-    txPckt.msg.poll_msg.mac.seqNum = pTagInfo->seqNum;
-    txPckt.msg.poll_msg.mac.panID[0] = (uint8_t)(pTagInfo->panID & 0xff);
-    txPckt.msg.poll_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
+    txPckt.msg.poll_broadcast_msg.mac.seqNum = pTagInfo->seqNum;
+    txPckt.msg.poll_broadcast_msg.mac.panID[0] = (uint8_t)(pTagInfo->panID & 0xff);
+    txPckt.msg.poll_broadcast_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
 
-    // set the destination address
-    memcpy(txPckt.msg.poll_msg.mac.destAddr, 
-        pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes, 
-        sizeof(pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes)
-    );
+    // set the destination address as broadcast 0xFFFF
+    memset(txPckt.msg.poll_broadcast_msg.mac.destAddr, 0xff, sizeof(txPckt.msg.poll_msg.mac.destAddr));
 
     // set the source address
-    memcpy(txPckt.msg.poll_msg.mac.sourceAddr, 
+    memcpy(txPckt.msg.poll_broadcast_msg.mac.sourceAddr, 
         pTagInfo->shortAddress.bytes, 
         sizeof(pTagInfo->shortAddress.bytes)
     );
 
     // set the message type
-    txPckt.msg.poll_msg.msgType = MSG_POLL;
+    txPckt.msg.poll_broadcast_msg.msgType = MSG_POLL_BROADCAST;
+
+    // set scheduled anchors
+    txPckt.msg.poll_broadcast_msg.numAnchors = pTagInfo->curAnchorNum;
+    for (int i = 0; i < pTagInfo->curAnchorNum; i++) {
+        memcpy(txPckt.msg.poll_broadcast_msg.anchorSchedule[i].shortAddr, 
+            pTagInfo->anchorList[i].shortAddr.bytes, 
+            sizeof(pTagInfo->anchorList[i].shortAddr.bytes)
+        );
+        //TODO: dynamic response time calculation here instead of fixed value at beginning ?
+
+        txPckt.msg.poll_broadcast_msg.anchorSchedule[i].respTime[0] = (uint8_t)(pTagInfo->anchorList[i].respDelay & 0xff);
+        txPckt.msg.poll_broadcast_msg.anchorSchedule[i].respTime[1] = (uint8_t)(pTagInfo->anchorList[i].respDelay >> 8);
+    }
 
     // set transmission parameters
     // tx immediately --> rx immediately --> rx timeout
 
-    txPckt.txFlag               = ( DWT_START_TX_DELAYED );
+    txPckt.txFlag               = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
     txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000);
 
     // calculate the delayed time to respond
-    TS2U64_MEMCPY(u64RxTs, pTagInfo->lastRxPckt.timeStamp);
+    TS2U64_MEMCPY(u64RxTs, prxPckt->timeStamp);
 
     // add delay
     txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_TX_POLL_DELAY_UUS) ) >> 8; // only high 32 bits
 
     pTagInfo->seqNum++;
-    pTagInfo->lastTxMsg = MSG_POLL;
+    pTagInfo->lastTxMsg = MSG_POLL_BROADCAST;
 
 
     TAG_ENTER_CRITICAL();
@@ -442,7 +397,7 @@ error_e tag_send_poll_master(tag_info_t *pTagInfo) {
 
     if (ret != _NO_ERR)
     {
-        Serial.println("POL TX failed");
+        Serial.println("POLL Broadcast TX failed");
     }
     
     return ret;
@@ -460,10 +415,7 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         if ((pRxPckt->msg.giving_turn_msg.message_type != MSG_GIVING_TURN ) ||
             (memcmp(pRxPckt->msg.giving_turn_msg.mac.destAddr, 
                     pTagInfo->shortAddress.bytes, 
-                    sizeof(pTagInfo->shortAddress.bytes)) != 0) ||
-            (memcmp(pRxPckt->msg.giving_turn_msg.mac.sourceAddr, 
-                    pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes, 
-                    sizeof(pTagInfo->anchorList[pTagInfo->curAnchorIdx].bytes)) != 0)
+                    sizeof(pTagInfo->shortAddress.bytes)) != 0) 
         ) {
 
             dwt_writefastCMD(CMD_TXRXOFF);
@@ -480,27 +432,16 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         }
         Serial.println();
 
-        pTagInfo->lastRxPckt = *pRxPckt;
+        // send broadcast poll message
 
-        // notify poll task to send poll message
-        if (app.tagPollTask.Handle) {
-            xTaskNotifyGive(app.tagPollTask.Handle);
+        if (tag_send_poll_broadcast(pTagInfo, pRxPckt) != _NO_ERR) {
+            // error handling
+            return _ERR;
         }
 
         return _NO_ERR;
     }
 
-    // ----------------------------------------------------------------------------
-    if (pTagInfo->expectedRxMsg == MSG_RESP) {
-        // TODO: implement this
-
-    }
-
-
-    // ----------------------------------------------------------------------------
-    if (pTagInfo->expectedRxMsg == MSG_REPORT) {
-        //TODO: implement this
-    }
 
     return _NO_ERR;
 }

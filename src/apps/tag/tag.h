@@ -114,11 +114,19 @@ struct tag_info_s {
   uwb_msg_e_t expectedRxMsg; // expected message type
 
   // Anchor management
-  dev_eui16_t anchorList[TAG_MAX_ANCHORS]; // list of anchors
+  struct {
+    dev_eui16_t shortAddr;
+
+    // timing parameters
+    uint16_t respDelay;
+    
+  } anchorList[TAG_MAX_ANCHORS]; // list of anchors
   uint8_t     curAnchorNum;  // number of anchors
   uint8_t     curAnchorIdx;  // current anchor index to range with
 
-  tag_rx_pckt_t lastRxPckt;  // last received packet
+  // timing
+  uint8_t   pollBroadcastTx_ts[TS_40B_SIZE]; // Poll Broadcast Tx timestamp
+
 };
 
 typedef struct tag_info_s tag_info_t;
@@ -137,8 +145,7 @@ void    tag_process_terminate(void);
 error_e tag_send_blink(tag_info_t *p);
 
 error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt);
-error_e tag_respond_ack(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt);
-error_e tag_send_poll_master(tag_info_t *pTagInfo);
+error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt);
 
 #ifdef __cplusplus
 }
