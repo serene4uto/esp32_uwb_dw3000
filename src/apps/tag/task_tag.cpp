@@ -139,7 +139,7 @@ static void tag_setup_tasks(void)
     xTaskCreate(TagPollTask, "TagPollTask", 1024, NULL, TAG_TASK_POLL_PRIO, &app.tagPollTask.Handle);
     app.tagPollTask.MutexId = xSemaphoreCreateMutex();
 
-    xTaskCreate(tag_rx_task, "TagRxTask", 1024, NULL, TAG_TASK_RX_PRIO, &app.tagRxTask.Handle);
+    xTaskCreate(tag_rx_task, "TagRxTask", 4096, NULL, TAG_TASK_RX_PRIO, &app.tagRxTask.Handle);
     app.tagRxTask.MutexId = xSemaphoreCreateMutex();
 
     if( (app.tagPollTask.Handle == NULL)   ||

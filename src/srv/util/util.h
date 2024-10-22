@@ -26,6 +26,7 @@
 // #define DWT_TIME_UNIT_US              (DWT_TIME_UNIT_S * 1e6) /**< = 15.65e-6 us */
 // #define UUS_TO_DWT_TIME_UNITS(uus)    ((uint64_t)(uus / DWT_TIME_UNIT_US)) /**< Convert microseconds to device time units. */
 
+#define SPEED_OF_LIGHT                (299702547.0)       /**< Speed of light in air, in metres per second. */
 // ----------------------------------------------------------------------------
 
 #define AR2U32(x)               (((uint32_t)x[3])<<24 |\

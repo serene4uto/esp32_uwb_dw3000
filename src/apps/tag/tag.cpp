@@ -437,11 +437,6 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
 
         Serial.println("Giving Turn Received");
 
-        // Check current queue size
-        // if (uxQueueMessagesWaiting(pTagInfo->rxPktQueue) > 0) {
-        //     Serial.println("Queue is not empty");
-        // }
-
         // send broadcast poll message
 
         if (tag_send_poll_broadcast(pTagInfo, pRxPckt) != _NO_ERR) {
@@ -475,10 +470,45 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
 
         Serial.println("RESP message received");
 
-
-
         //TODO: calculate the distance
+        uint64_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
+        int32_t rtd_init, rtd_resp;
+        float clockOffsetRatio;
 
+        // get offset ratio
+        clockOffsetRatio = ((float)dwt_readclockoffset()) / (uint32_t)(1<<26);
+
+        // get timestamps
+        TS2U64_MEMCPY(poll_tx_ts, pTagInfo->lastPollBrdcastTxTs);
+        TS2U64_MEMCPY(resp_rx_ts, pRxPckt->timeStamp);
+        TS2U64_MEMCPY(poll_rx_ts, pRxPckt->msg.resp_msg.pollRxTs); // get anchor poll rx ts
+        TS2U64_MEMCPY(resp_tx_ts, pRxPckt->msg.resp_msg.respTxTs); // get anchor resp tx ts;
+
+        Serial.print("poll_tx_ts: ");
+        Serial.println((uint32_t)poll_tx_ts);
+        Serial.print("poll_rx_ts: ");
+        Serial.println((uint32_t)poll_rx_ts);
+        Serial.print("resp_tx_ts: ");
+        Serial.println((uint32_t)resp_tx_ts);
+        Serial.print("resp_rx_ts: ");
+        Serial.println((uint32_t)resp_rx_ts);
+
+        // compute time of flight and distance
+        rtd_init = (uint32_t)resp_rx_ts - (uint32_t)poll_tx_ts;
+        rtd_resp = (uint32_t)resp_tx_ts - (uint32_t)poll_rx_ts;
+
+        Serial.print("rtd_init: ");
+        Serial.println(rtd_init);
+        Serial.print("rtd_resp: ");
+        Serial.println(rtd_resp);
+
+        double tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
+        double distance = tof * SPEED_OF_LIGHT;
+
+        Serial.print("DISTANCE: ");
+        Serial.println(distance);
+
+        // Send end turn message
 
         return _NO_ERR;
     }
