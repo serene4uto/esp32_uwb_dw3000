@@ -529,7 +529,7 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
 
         // send response message
         if(anchor_send_resp(pAnchorInfo, pRxPckt) != _NO_ERR) {
-            // error handling
+            // TODO: error handling
             return _ERR;
         }
 
