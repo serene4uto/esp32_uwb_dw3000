@@ -372,7 +372,8 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
 
     if (ret != _NO_ERR)
     {
-        Serial.println("Error in tx_start");
+        //TODO: handle error
+        Serial.println("Send giving turn message error");
     }
     
     return ret;
@@ -428,7 +429,6 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
     // tx immediately --> rx immediately --> rx timeout
     txPckt.txFlag               = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
     txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);   // TX to RX delay
-    // txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);   // RX timeout 
 
     // calculate the delayed time to respond
     TS2U64_MEMCPY(pollBroadcastRxTs, pRxPckt->timeStamp);
@@ -446,7 +446,6 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
         uint16_t longestDelay = (uint16_t)((pRxPckt->msg.poll_broadcast_msg.anchorSchedule[pRxPckt->msg.poll_broadcast_msg.numAnchors-1].respTime[1] << 8) | 
                                         pRxPckt->msg.poll_broadcast_msg.anchorSchedule[pRxPckt->msg.poll_broadcast_msg.numAnchors-1].respTime[0]);
         txPckt.delayedRxTimeout_sy = (uint32_t)util_us_to_sy(longestDelay + 7000);   // RX timeout for end turn message
-        // txPckt.delayedRxTimeout_sy = (uint32_t)util_us_to_sy(1000000); 
     }
     else
     {
@@ -465,7 +464,8 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
 
     if (ret != _NO_ERR)
     {
-        Serial.println("Error in tx_start");
+        //TODO: handle error
+        Serial.println("Send response message error");
     }
     
     return ret;
