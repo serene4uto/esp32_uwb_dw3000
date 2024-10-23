@@ -118,8 +118,10 @@ struct tag_info_s {
   } anchorList[TAG_MAX_ANCHORS]; // list of anchors
 
   uint8_t curAnchorNum;  // number of anchors
-  uint8_t curAnchorIdx;  // current anchor index to range with
+  // uint8_t curAnchorIdx;  // current anchor index to range with
+  uint8_t anchorMasterIdx; // current anchor master index
 
+  uint8_t curRespWaitCount; // current response wait count
   // common timing params
   uint8_t lastPollBrdcastTxTs[TS_40B_SIZE]; // last Poll Broadcast Tx timestamp
 };
@@ -141,6 +143,7 @@ error_e tag_send_blink(tag_info_t *p);
 
 error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt);
 error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt);
+error_e tag_send_end_turn(tag_info_t *pTagInfo);
 
 #ifdef __cplusplus
 }

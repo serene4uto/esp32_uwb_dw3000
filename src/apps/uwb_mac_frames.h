@@ -169,9 +169,10 @@ typedef struct
 {
     mac_header_ss_t mac;
     uint8_t msgType;
+    uint8_t numAnchors;
     struct {
         uint8_t shortAddr[ADDR_BYTE_SIZE_S];
-        uint8_t dist[4];
+        uint8_t dist[2];
     } anchorReport[POLL_BROADCAST_MAX_ANCHORS];
     uint8_t fcs[2];
 }__attribute__((packed))

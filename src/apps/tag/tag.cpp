@@ -17,7 +17,10 @@
 
 
 // #define TAG_GIVING_TURN_ACK_DELAY_UUS     (1500)    /* delay before sending ACK after receiving Giving Turn message, us */
-#define TAG_TX_POLL_DELAY_UUS     (2000)    /* delay before sending POLL after receiving Giving Turn message, us */
+#define TAG_TX_POLL_DELAY_UUS           (2000)                /* delay before sending POLL after receiving Giving Turn message, us */
+
+#define TAG_DEFAULT_RESP_DELAY_TIME_US  (7000)          /* default response msg delay time, us */
+#define TAG_DEFAULT_RESP_TIMEOUT_US     (7000)         /* default response msg timeout, us */
 
 #define TAG_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define TAG_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
@@ -122,26 +125,31 @@ static void
 tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
 {
     tag_info_t *pTagInfo = getTagInfoPtr();
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     if(!pTagInfo) {
         return;
     }
 
     if(pTagInfo->mode == tag_info_s::WAIT_FOR_TURN_MODE) {
-
+        dwt_setrxtimeout(0);
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
     }
 
-    if(pTagInfo->mode == tag_info_s::RANGING_MODE) {
-        // if any timeout occurs in Ranging mode, abort the ranging process and wait for the next turn
-        pTagInfo->mode = tag_info_s::WAIT_FOR_TURN_MODE;
-        pTagInfo->expectedRxMsg = MSG_GIVING_TURN;
-        pTagInfo->lastTxMsg = MSG_NONE;
+    if(pTagInfo->mode == tag_info_s::RANGING_MODE && 
+        pTagInfo->expectedRxMsg == MSG_RESP
+    ) {
+        pTagInfo->curRespWaitCount++; 
+        if(pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
+            pTagInfo->curRespWaitCount = 0;
 
-        Serial.println("Rx Timeout, waiting for turn");
+            // send end turn message
+            vTaskNotifyGiveFromISR(app.tagEndTurnTask.Handle, &xHigherPriorityTaskWoken);
+
+        } 
     }
 
-    dwt_setrxtimeout(0);
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    Serial.println("Rx Timeout");  
 }
 
 static void
@@ -202,12 +210,12 @@ error_e tag_process_init(void)
     // pTagInfo->anchorList[2].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV2_EUI16;
     // pTagInfo->anchorList[3].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV3_EUI16;
     pTagInfo->curAnchorNum = 1;
-    pTagInfo->curAnchorIdx = 0; // anchor master position
+    pTagInfo->anchorMasterIdx = 0; // index of the anchor master
 
     // fixed respDelay for each anchor
     for(uint8_t i=0; i<pTagInfo->curAnchorNum; i++)
     {
-        pTagInfo->anchorList[i].respDelay = (2*i+1)* 7000; //DEFAULT_REPLY_DELAY_TIME_US
+        pTagInfo->anchorList[i].respDelay = (2*i+1)* TAG_DEFAULT_RESP_DELAY_TIME_US; //DEFAULT_REPLY_DELAY_TIME_US
     }
 
     pTagInfo->panID = TAG_DEFAULT_PANID;
@@ -292,6 +300,8 @@ error_e tag_process_init(void)
     pTagInfo->mode = tag_info_s::WAIT_FOR_TURN_MODE; // waiting for the turn at the beginning
     pTagInfo->expectedRxMsg = MSG_GIVING_TURN; 
     pTagInfo->lastTxMsg = MSG_NONE;
+
+    pTagInfo->curRespWaitCount = 0;
 
     TAG_EXIT_CRITICAL();
     
@@ -380,7 +390,7 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
     // tx immediately --> rx immediately --> rx timeout
     txPckt.txFlag               = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
     txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(1000000); // timeout for the resp msg
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(TAG_DEFAULT_RESP_TIMEOUT_US); // timeout for the resp msg
 
     // calculate the delayed time to respond
     TS2U64_MEMCPY(u64RxTs, prxPckt->timeStamp);
@@ -404,6 +414,71 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
         Serial.println("POLL Broadcast TX failed");
     }
     
+    return ret;
+}
+
+error_e tag_send_end_turn(tag_info_t *pTagInfo) {
+
+    error_e ret = _NO_ERR;
+    tx_pckt_t txPckt;
+
+    memset(&txPckt, 0, sizeof(txPckt));
+
+    txPckt.psduLen = sizeof(end_turn_msg_t);
+    txPckt.msg.end_turn_msg.mac.frameCtrl[0] = FC_1;
+    txPckt.msg.end_turn_msg.mac.frameCtrl[1] = FC_2_SHORT;
+    txPckt.msg.end_turn_msg.mac.seqNum = pTagInfo->seqNum;
+
+    txPckt.msg.end_turn_msg.mac.panID[0] = (uint8_t)(pTagInfo->panID & 0xff);
+    txPckt.msg.end_turn_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
+
+    memcpy(txPckt.msg.end_turn_msg.mac.destAddr, 
+        pTagInfo->anchorList[pTagInfo->anchorMasterIdx].shortAddr.bytes, 
+        sizeof(pTagInfo->anchorList[pTagInfo->anchorMasterIdx].shortAddr.bytes)
+    );
+
+    memcpy(txPckt.msg.end_turn_msg.mac.sourceAddr, 
+        pTagInfo->shortAddress.bytes, 
+        sizeof(pTagInfo->shortAddress.bytes)
+    );
+
+    txPckt.msg.end_turn_msg.msgType = MSG_END_TURN;
+
+    // add report
+    txPckt.msg.end_turn_msg.numAnchors = pTagInfo->curAnchorNum;
+    for (int i = 0; i < pTagInfo->curAnchorNum; i++) {
+        memcpy(txPckt.msg.end_turn_msg.anchorReport[i].shortAddr, 
+            pTagInfo->anchorList[i].shortAddr.bytes, 
+            sizeof(pTagInfo->anchorList[i].shortAddr.bytes)
+        );
+
+        // add distance
+        uint16_t dist = (uint16_t)(pTagInfo->anchorList[i].lastDist * 1000); // convert to mm
+        txPckt.msg.end_turn_msg.anchorReport[i].dist[0] = (uint8_t)(dist & 0xff);
+        txPckt.msg.end_turn_msg.anchorReport[i].dist[1] = (uint8_t)(dist >> 8);
+    }
+
+    // set transmission parameters
+    txPckt.txFlag = (DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+    txPckt.delayedRxTime_sy = util_us_to_sy(0);
+    txPckt.delayedRxTimeout_sy = util_us_to_sy(0); // no timeout
+    txPckt.delayedTxTimeH_dt = util_us_to_dev_time(0);
+
+    pTagInfo->seqNum++;
+    pTagInfo->lastTxMsg = MSG_END_TURN;
+
+    TAG_ENTER_CRITICAL();
+
+    ret = tx_start(&txPckt);
+
+    TAG_EXIT_CRITICAL();
+
+    if (ret != _NO_ERR)
+    {
+        //TODO: error handling
+        Serial.println("End Turn TX failed");
+    }
+
     return ret;
 }
 
@@ -474,6 +549,7 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         uint64_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
         int32_t rtd_init, rtd_resp;
         float clockOffsetRatio;
+        uint8_t curAnchorIdx;
 
         // get offset ratio
         clockOffsetRatio = ((float)dwt_readclockoffset()) / (uint32_t)(1<<26);
@@ -484,23 +560,23 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         TS2U64_MEMCPY(poll_rx_ts, pRxPckt->msg.resp_msg.pollRxTs); // get anchor poll rx ts
         TS2U64_MEMCPY(resp_tx_ts, pRxPckt->msg.resp_msg.respTxTs); // get anchor resp tx ts;
 
-        Serial.print("poll_tx_ts: ");
-        Serial.println((uint32_t)poll_tx_ts);
-        Serial.print("poll_rx_ts: ");
-        Serial.println((uint32_t)poll_rx_ts);
-        Serial.print("resp_tx_ts: ");
-        Serial.println((uint32_t)resp_tx_ts);
-        Serial.print("resp_rx_ts: ");
-        Serial.println((uint32_t)resp_rx_ts);
+        // Serial.print("poll_tx_ts: ");
+        // Serial.println((uint32_t)poll_tx_ts);
+        // Serial.print("poll_rx_ts: ");
+        // Serial.println((uint32_t)poll_rx_ts);
+        // Serial.print("resp_tx_ts: ");
+        // Serial.println((uint32_t)resp_tx_ts);
+        // Serial.print("resp_rx_ts: ");
+        // Serial.println((uint32_t)resp_rx_ts);
 
         // compute time of flight and distance
         rtd_init = (uint32_t)resp_rx_ts - (uint32_t)poll_tx_ts;
         rtd_resp = (uint32_t)resp_tx_ts - (uint32_t)poll_rx_ts;
 
-        Serial.print("rtd_init: ");
-        Serial.println(rtd_init);
-        Serial.print("rtd_resp: ");
-        Serial.println(rtd_resp);
+        // Serial.print("rtd_init: ");
+        // Serial.println(rtd_init);
+        // Serial.print("rtd_resp: ");
+        // Serial.println(rtd_resp);
 
         double tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
         double distance = tof * SPEED_OF_LIGHT;
@@ -508,8 +584,31 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         Serial.print("DISTANCE: ");
         Serial.println(distance);
 
-        // Send end turn message
+        // check current anchor index
+        for (int i = 0; i < pTagInfo->curAnchorNum; i++) {
+            if (memcmp(pRxPckt->msg.resp_msg.mac.sourceAddr, 
+                       pTagInfo->anchorList[i].shortAddr.bytes, 
+                       sizeof(pTagInfo->anchorList[i].shortAddr.bytes)) == 0) {
+                curAnchorIdx = i;
+                break;
+            }
+        }
+
+        // save the last distance 
+        pTagInfo->anchorList[curAnchorIdx].lastDist = distance;
+
         
+        // increment the response wait count when receiving a response message or timeout
+        // TODO: error rx case ???
+        pTagInfo->curRespWaitCount++; 
+
+        if(pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
+            //send end turn message
+            pTagInfo->curRespWaitCount = 0;
+
+            // send end turn message
+            xTaskNotifyGive(app.tagEndTurnTask.Handle);
+        }
 
         return _NO_ERR;
     }

@@ -14,11 +14,11 @@
 #include "tag.h"
 
 
-#define TAG_TASK_BLINK_PRIO    (5)
-#define TAG_TASK_POLL_PRIO      (10)
-#define TAG_TASK_RX_PRIO        (10)
+#define TAG_TASK_BLINK_PRIO         (5)
+#define TAG_TASK_END_TURN_PRIO      (10)
+#define TAG_TASK_RX_PRIO            (10)
 
-#define BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */
+#define TAG_BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */
 
 portMUX_TYPE tagTaskMux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -66,16 +66,11 @@ TagBlinkTask(void * arg)
     // }
 }
 
-/*
- * @brief
- *     The thread is initiating the TWR sequence
- *      on reception of .signal.twrTxPoll
- *
- * */
+
 static void
-TagPollTask(void * arg)
+tag_end_turn_task(void * arg)
 {
-    tag_info_t     *pTagInfo;
+    tag_info_t *pTagInfo;
 
     while(!(pTagInfo = getTagInfoPtr()))  //wait for initialisation of psTagInfo
     {
@@ -84,13 +79,21 @@ TagPollTask(void * arg)
 
     while(1)
     {
-        xSemaphoreGive(app.tagPollTask.MutexId);
+        xSemaphoreGive(app.tagEndTurnTask.MutexId);
 
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for the signal
 
-        xSemaphoreTake(app.tagPollTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
+        xSemaphoreTake(app.tagEndTurnTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
 
-        // Serial.println("Polling");
+        Serial.println("End Turn Task");
+
+        tag_send_end_turn(pTagInfo); // send the end turn message
+
+        // switch to wait for turn mode
+        pTagInfo->mode = tag_info_s::WAIT_FOR_TURN_MODE;
+        pTagInfo->expectedRxMsg = MSG_GIVING_TURN;
+        pTagInfo->lastTxMsg = MSG_NONE;
+        pTagInfo->curRespWaitCount = 0;
     }
 }
 
@@ -136,13 +139,13 @@ static void tag_setup_tasks(void)
     // xTaskCreate(TagBlinkTask, "BlinkTask", 1024, NULL, TAG_TASK_BLINK_PRIO, &app.blinkTask.Handle);
     // app.blinkTask.MutexId = xSemaphoreCreateMutex();
 
-    xTaskCreate(TagPollTask, "TagPollTask", 1024, NULL, TAG_TASK_POLL_PRIO, &app.tagPollTask.Handle);
-    app.tagPollTask.MutexId = xSemaphoreCreateMutex();
+    xTaskCreate(tag_end_turn_task, "TagEndTurnTask", 1024, NULL, TAG_TASK_END_TURN_PRIO, &app.tagEndTurnTask.Handle);
+    app.tagEndTurnTask.MutexId = xSemaphoreCreateMutex();
 
     xTaskCreate(tag_rx_task, "TagRxTask", 4096, NULL, TAG_TASK_RX_PRIO, &app.tagRxTask.Handle);
     app.tagRxTask.MutexId = xSemaphoreCreateMutex();
 
-    if( (app.tagPollTask.Handle == NULL)   ||
+    if( (app.tagEndTurnTask.Handle == NULL)   ||
         (app.tagRxTask.Handle == NULL))
     {
         //TODO: handle error

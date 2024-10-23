@@ -51,7 +51,7 @@ struct app_s
     task_context_t anchor_master_giving_turn_task; /* Anchor giving turn task */
 
     task_context_t tagRxTask;    /* Tag Rx task */
-    task_context_t tagPollTask;  /* Tag Poll task */
+    task_context_t tagEndTurnTask; /* Tag End Turn task */
 
     
     // void (* hw_time_cb)(void); // pointer to the hardware timer callback
