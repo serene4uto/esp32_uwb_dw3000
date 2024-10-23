@@ -13,9 +13,10 @@
 #include "common_n.h"
 #include "util.h"
 
-// #define ANCHOR_GIVING_TURN_ACK_TIMEOUT_US               (1000000)          /* timeout for waiting ACK after sending Giving Turn message, us */
-#define ANCHOR_MASTER_POLL_TIMEOUT_US                   (1000000)       /* timeout for waiting POLL after finishing Giving turn phase, us */
-#define ANCHOR_POLL_TIMEOUT_US                          (0)          /* timeout for waiting POLL */
+
+#define ANCHOR_MASTER_WAIT_POLL_BROADCAST_TIMEOUT_US        (1000000)           /* timeout for waiting POLL BROADCAST message, us */
+#define ANCHOR_WAIT_POLL_BROADCAST_TIMEOUT_US               (0)                 /* timeout for waiting POLL BROADCAST message, us */
+#define ANCHOR_WAIT_FINAL_MSG_TIMEOUT_US                    (1000000)           /* timeout for waiting the final message after sending the response message, us */
 
 #define ANCHOR_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define ANCHOR_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
@@ -60,6 +61,8 @@ void anchor_tx_cb(const dwt_cb_data_t *txd){
             pAnchorInfo->expectedRxMsg = MSG_POLL;
         }
         pAnchorInfo->lastTxMsg = MSG_NONE;
+
+        Serial.println("Sent response message");
     }
 
 
@@ -88,7 +91,6 @@ void anchor_rx_cb(const dwt_cb_data_t *rxd){
     {
         vTaskNotifyGiveFromISR(app.anchor_rx_task.Handle, &xHigherPriorityTaskWoken);
     }
-
 
 }
 
@@ -305,7 +307,12 @@ void anchor_process_start(void) {
     else
     {
         pAnchorInfo->mode = anchor_info_s::RANGING_MODE; // at the beginning, the Tag waits for the turn
-        xTaskNotifyGive(app.anchor_rx_task.Handle);
+        // start waiting for the POLL BROADCAST message
+        pAnchorInfo->expectedRxMsg = MSG_POLL_BROADCAST;
+        pAnchorInfo->lastTxMsg = MSG_NONE;
+
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        dwt_setrxtimeout(util_us_to_sy(0));
     }
 }
 
@@ -349,7 +356,7 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     txPckt.txFlag               = ( DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED );
     txPckt.delayedTxTimeH_dt    = (uint32_t)util_us_to_sy(0);   // delayed TX time
     txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);   // TX to RX delay
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(ANCHOR_MASTER_POLL_TIMEOUT_US);   // RX timeout
+    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(ANCHOR_MASTER_WAIT_POLL_BROADCAST_TIMEOUT_US);   // RX timeout
     
     pAnchorInfo->seqNum++;
     pAnchorInfo->lastTxMsg = MSG_GIVING_TURN;
@@ -421,7 +428,7 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
     // tx immediately --> rx immediately --> rx timeout
     txPckt.txFlag               = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
     txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);   // TX to RX delay
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);   // RX timeout 
+    // txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);   // RX timeout 
 
     // calculate the delayed time to respond
     TS2U64_MEMCPY(pollBroadcastRxTs, pRxPckt->timeStamp);
@@ -439,6 +446,7 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
         uint16_t longestDelay = (uint16_t)((pRxPckt->msg.poll_broadcast_msg.anchorSchedule[pRxPckt->msg.poll_broadcast_msg.numAnchors-1].respTime[1] << 8) | 
                                         pRxPckt->msg.poll_broadcast_msg.anchorSchedule[pRxPckt->msg.poll_broadcast_msg.numAnchors-1].respTime[0]);
         txPckt.delayedRxTimeout_sy = (uint32_t)util_us_to_sy(longestDelay + 7000);   // RX timeout for end turn message
+        // txPckt.delayedRxTimeout_sy = (uint32_t)util_us_to_sy(1000000); 
     }
     else
     {
@@ -504,8 +512,10 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
                 pAnchorInfo->mode = anchor_info_s::RANGING_MODE;
                 pAnchorInfo->expectedRxMsg = MSG_POLL_BROADCAST;
                 pAnchorInfo->lastTxMsg = MSG_NONE;
+
+                // re-enable RX with timeout (0)
                 dwt_rxenable(DWT_START_RX_IMMEDIATE);
-                dwt_setrxtimeout(util_us_to_sy(ANCHOR_POLL_TIMEOUT_US));
+                dwt_setrxtimeout(util_us_to_sy(ANCHOR_WAIT_POLL_BROADCAST_TIMEOUT_US));
             }
 
             Serial.println("Error in POLL Broadcast message");
@@ -515,7 +525,7 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
 
         Serial.println("POLL Broadcast received");
 
-        pAnchorInfo->mode == anchor_info_s::RANGING_MODE;
+        pAnchorInfo->mode = anchor_info_s::RANGING_MODE; // switch to ranging mode
 
         // send response message
         if(anchor_send_resp(pAnchorInfo, pRxPckt) != _NO_ERR) {
@@ -530,9 +540,55 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
     if( (pAnchorInfo->mode == anchor_info_s::RANGING_MODE) && 
         (pAnchorInfo->expectedRxMsg == MSG_END_TURN)        
     ) {
-        
+
+        // print raw message
+        for(int i = 0; i < pRxPckt->rxDataLen; i++)
+        {
+            Serial.print(pRxPckt->msg.raw[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println();
+
+        if( (pRxPckt->msg.end_turn_msg.msgType != MSG_END_TURN) || 
+            (memcmp(pRxPckt->msg.end_turn_msg.mac.destAddr, 
+                    pAnchorInfo->shortAddress.bytes, 
+                    sizeof(pAnchorInfo->shortAddress.bytes)) != 0)
+        ) {
+            //TODO: Error handling
+            return _ERR;
+        }
+
+        Serial.println("END TURN received");
+
+        // back to giving turn mode
+        pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE;
+        pAnchorInfo->expectedRxMsg = MSG_GIVING_TURN;
+        pAnchorInfo->lastTxMsg = MSG_NONE;
+
+        xTaskNotifyGive(app.anchor_master_giving_turn_task.Handle);
+
+        return _NO_ERR;
     }
 
+    // no message matched 
+    if(pAnchorInfo->isMaster) {
+        // back to giving turn mode ?? TODO: check this
+        pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE;
+        pAnchorInfo->expectedRxMsg = MSG_NONE;
+        pAnchorInfo->lastTxMsg = MSG_NONE;
+
+        xTaskNotifyGive(app.anchor_master_giving_turn_task.Handle);
+    } 
+    else {
+        // abort the ranging process and wait for next poll broadcast
+        pAnchorInfo->mode = anchor_info_s::RANGING_MODE;
+        pAnchorInfo->expectedRxMsg = MSG_POLL_BROADCAST;
+        pAnchorInfo->lastTxMsg = MSG_NONE;
+
+        // re-enable RX with timeout (0)
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        dwt_setrxtimeout(util_us_to_sy(ANCHOR_WAIT_POLL_BROADCAST_TIMEOUT_US));
+    }
 
     return _NO_ERR;
 }
