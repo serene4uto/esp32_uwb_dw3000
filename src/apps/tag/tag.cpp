@@ -8,6 +8,8 @@
  * @author Nguyen Ha Trung
  */
 
+#include "esp_log.h"
+
 #include "tag.h"
 #include "deca_device_api.h"
 #include "deca_interface.h"
@@ -79,12 +81,13 @@ tag_tx_cb(const dwt_cb_data_t *txd)
         if(pTagInfo->mode != tag_info_s::RANGING_MODE) {
             pTagInfo->mode = tag_info_s::RANGING_MODE;
         }
-        Serial.println("Poll Broadcast sent");
+
+        ESP_LOGI(TAG_LOG_TAG, "Poll Broadcast sent");
     }
 
     if(pTagInfo->lastTxMsg == MSG_END_TURN)
     {
-        Serial.println("End turn sent");
+        ESP_LOGI(TAG_LOG_TAG, "End Turn sent");
     }
 }
 
@@ -149,7 +152,7 @@ tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
         } 
     }
 
-    Serial.println("Rx Timeout");  
+    ESP_LOGI(TAG_LOG_TAG, "RX Timeout");
 }
 
 static void
@@ -180,6 +183,9 @@ tag_spi_rdy_cb(const dwt_cb_data_t *rxd)
  * */
 error_e tag_process_init(void)
 {
+    esp_log_level_set(TAG_LOG_TAG, TAG_LOG_LEVEL);
+    
+
     tag_info_t *pTagInfo = NULL;
 
     // Allocate memory for the tag_info_t structure
@@ -231,7 +237,7 @@ error_e tag_process_init(void)
     if (dwt_initialise(DWT_DW_INIT | DWT_READ_OTP_PID | DWT_READ_OTP_LID) != DWT_SUCCESS) /**< set callbacks to NULL inside dwt_initialise*/
     {
         TAG_EXIT_CRITICAL();
-        Serial.println("INIT FAILED");
+        ESP_LOGE(TAG_LOG_TAG, "Init failed");
         return (_ERR_INIT);   // device initialise has failed
     }
 
@@ -241,7 +247,7 @@ error_e tag_process_init(void)
 
     if (dev_id != DWT_C0_DEV_ID) {
         TAG_EXIT_CRITICAL();
-        Serial.println("Device ID is not correct");
+        ESP_LOGE(TAG_LOG_TAG, "Device ID check failed");
         return (_ERR_INIT);
     }
 
@@ -304,6 +310,8 @@ error_e tag_process_init(void)
     pTagInfo->curRespWaitCount = 0;
 
     TAG_EXIT_CRITICAL();
+
+    ESP_LOGI(TAG_LOG_TAG, "Tag init done");
     
     return (_NO_ERR);
 }
@@ -411,7 +419,7 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
     if (ret != _NO_ERR)
     {
         //TODO: error handling
-        Serial.println("POLL Broadcast TX failed");
+        ESP_LOGE(TAG_LOG_TAG, "Poll Broadcast TX failed");
     }
     
     return ret;
@@ -476,7 +484,7 @@ error_e tag_send_end_turn(tag_info_t *pTagInfo) {
     if (ret != _NO_ERR)
     {
         //TODO: error handling
-        Serial.println("End Turn TX failed");
+        ESP_LOGE(TAG_LOG_TAG, "END TURN msg TX failed");
     }
 
     return ret;
@@ -490,12 +498,6 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
     if ((pTagInfo->mode == tag_info_t::WAIT_FOR_TURN_MODE) && 
         (pTagInfo->expectedRxMsg == MSG_GIVING_TURN)
     ) {
-        // Print raw message
-        for (int i = 0; i < pRxPckt->rxDataLen; i++) {
-            Serial.print(pRxPckt->msg.raw[i], HEX);
-            Serial.print(" ");
-        }
-        Serial.println();
 
         // Check if the message type is MSG_GIVING_TURN
         if ((pRxPckt->msg.giving_turn_msg.message_type != MSG_GIVING_TURN ) ||
@@ -510,7 +512,7 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
             return _ERR;
         }
 
-        Serial.println("Giving Turn Received");
+        ESP_LOGI(TAG_LOG_TAG, "GIVING TURN msg RX succeeded");
 
         // send broadcast poll message
 
@@ -526,11 +528,11 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         (pTagInfo->expectedRxMsg == MSG_RESP)
     ) {
         // print raw message
-        for (int i = 0; i < pRxPckt->rxDataLen; i++) {
-            Serial.print(pRxPckt->msg.raw[i], HEX);
-            Serial.print(" ");
-        }
-        Serial.println();
+        // for (int i = 0; i < pRxPckt->rxDataLen; i++) {
+        //     Serial.print(pRxPckt->msg.raw[i], HEX);
+        //     Serial.print(" ");
+        // }
+        // Serial.println();
 
         // TODO: checking if source anchor is in the list of anchors
         if ((pRxPckt->msg.resp_msg.msgType != MSG_RESP) ||
@@ -539,11 +541,11 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
                     sizeof(pTagInfo->shortAddress.bytes)) != 0) 
         ) {
             //TODO: error handling
-            Serial.println("Error in RESP message");
+            ESP_LOGE(TAG_LOG_TAG, "RESP message RX failed");
             return _ERR;
         }
 
-        Serial.println("RESP message received");
+        ESP_LOGI(TAG_LOG_TAG, "RESP message RX succeeded");
 
         //TODO: calculate the distance
         uint64_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
@@ -581,8 +583,7 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         double tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
         double distance = tof * SPEED_OF_LIGHT;
 
-        Serial.print("DISTANCE: ");
-        Serial.println(distance);
+        ESP_LOGI(TAG_LOG_TAG, "Distance: %f", distance);
 
         // check current anchor index
         for (int i = 0; i < pTagInfo->curAnchorNum; i++) {

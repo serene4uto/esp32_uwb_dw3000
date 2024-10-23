@@ -10,7 +10,6 @@
 #endif
 
 #include "deca_device_api.h"
-#include "tag_list.h"
 
 /* Hardcoded EUI64s for demo */
 /* ANCHOR EUI64s */ 

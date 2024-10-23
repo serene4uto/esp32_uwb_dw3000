@@ -6,8 +6,6 @@
  * @author Nguyen Ha Trung
  */
 
-
-
 #ifndef __ANCHOR_M__H__
 #define __ANCHOR_M__H__ 1
 
@@ -26,25 +24,24 @@
 
 #define ANCHOR_MASTER_MAX_TAGS       (4)
 
-/* RxPckt is the structure is for the current reception */
+/* RxPckt is the structure for the current reception */
 struct anchor_rx_pckt_s
 {
-    uint16_t        rxDataLen;
+    uint16_t rxDataLen;
 
     union {
-      uint8_t               raw[STANDARD_FRAME_SIZE];   /**< Raw message buffer. */
-      giving_turn_msg_t     giving_turn_msg;            /**< Giving turn message. */
-      poll_broadcast_msg_t  poll_broadcast_msg;         /**< Poll broadcast message. */
-      resp_msg_t            resp_msg;                   /**< Response message. */
-      end_turn_msg_t        end_turn_msg;               /**< End turn message. */
+        uint8_t raw[STANDARD_FRAME_SIZE];          /**< Raw message buffer. */
+        giving_turn_msg_t giving_turn_msg;          /**< Giving turn message. */
+        poll_broadcast_msg_t poll_broadcast_msg;    /**< Poll broadcast message. */
+        resp_msg_t resp_msg;                        /**< Response message. */
+        end_turn_msg_t end_turn_msg;                /**< End turn message. */
     } msg;  /**< Union of possible message types to be received. */
 
-    uint8_t     timeStamp[TS_40B_SIZE]; /* Timestamp of the received frame */
+    uint8_t timeStamp[TS_40B_SIZE]; /* Timestamp of the received frame */
 
-    dev_eui16_t *tag;                /* the tag, to which the current range exchange is performing */
+    dev_eui16_t *tag;                /* The tag to which the current range exchange is performing */
 
-
-    uint32_t     status;              /* status of the received frame */
+    uint32_t status;                  /* Status of the received frame */
 };
 
 typedef struct anchor_rx_pckt_s anchor_rx_pckt_t;
@@ -53,27 +50,27 @@ struct anchor_info_s
 {
     /* Unique long Address, used at the discovery phase before Range Init reception */
     union {
-      uint8_t  bytes[8];
-      uint64_t eui64;
+        uint8_t bytes[8];
+        uint64_t eui64;
     } longAddress;
 
-    /* Unique short Address, uses at the ranging phase
-     * valid for low-endian compiler.
-     * */
-    union    {
-      uint8_t     bytes[2];
-      uint16_t    eui16;
+    /* Unique short Address, used at the ranging phase
+     * Valid for little-endian compiler.
+     */
+    union {
+        uint8_t bytes[2];
+        uint16_t eui16;
     } shortAddress;
     
-    uint16_t    panID;          // PAN ID
+    uint16_t panID;                   // PAN ID
 
-    QueueHandle_t rxPcktQueue = NULL;  // circular Buffer of received Rx packets
+    QueueHandle_t rxPcktQueue = NULL; // Circular buffer of received Rx packets
 
-    uint8_t seqNum; // sequence number, increases on every tx_start
-    uwb_msg_e_t lastTxMsg; // last transmitted message type
-    uwb_msg_e_t expectedRxMsg; // expected next rx message type
+    uint8_t seqNum;                   // Sequence number, increases on every tx_start
+    uwb_msg_e_t lastTxMsg;            // Last transmitted message type
+    uwb_msg_e_t expectedRxMsg;        // Expected next Rx message type
     
-    bool   isMaster = false;  // true if this is the Master Anchor
+    bool isMaster = false;            // True if this is the Master Anchor
 
     enum {
         IDLE_MODE = 0x00,
@@ -81,30 +78,27 @@ struct anchor_info_s
         RANGING_MODE,
     } mode;
 
-    // master info
-    uint8_t curTagNum; // number of tags
-    dev_eui16_t tagList[ANCHOR_MASTER_MAX_TAGS]; // list of tags
-    uint8_t curTagIdx; // current tag index
+    // Master info
+    uint8_t curTagNum;                                // Number of tags
+    dev_eui16_t tagList[ANCHOR_MASTER_MAX_TAGS];      // List of tags
+    uint8_t curTagIdx;                                // Current tag index
 
-    // timing
-    uint32_t endTurnTimeout; // timeout for the end turn message
+    // Timing
+    uint32_t endTurnTimeout;                          // Timeout for the end turn message
 };
 
-typedef struct anchor_info_s anchor_info_t; 
+typedef struct anchor_info_s anchor_info_t;
 
-
-
-anchor_info_t * getAnchorInfoPtr(void);
+anchor_info_t* getAnchorInfoPtr(void);
 
 error_e anchor_process_init(void);
-void    anchor_process_start(void);
-void    anchor_process_terminate(void);
+void anchor_process_start(void);
+void anchor_process_terminate(void);
 
+error_e anchor_master_give_turn(anchor_info_t* pAnchorInfo);
 
-error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo);
+error_e anchor_process_rx_pckt(anchor_info_t* pAnchorInfo, anchor_rx_pckt_t* pRxPckt);
 
-error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt);
-
-error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt);
+error_e anchor_send_resp(anchor_info_t* pAnchorInfo, anchor_rx_pckt_t* pRxPckt);
 
 #endif /* __ANCHOR_M__H__ */

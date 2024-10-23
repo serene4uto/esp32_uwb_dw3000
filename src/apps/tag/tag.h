@@ -22,9 +22,6 @@
 #endif
 
 
-
-
-
 #define TAG_DEFAULT_PANID               (0xDECA) /* default PAN ID */
 
 #define TAG_BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */

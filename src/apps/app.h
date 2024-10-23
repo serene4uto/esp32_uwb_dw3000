@@ -23,6 +23,22 @@
  extern "C" {
 #endif
 
+#define MAIN_LOG_TAG                    "MAIN"
+#define MAIN_LOG_LEVEL                  ESP_LOG_INFO
+
+#define TAG_LOG_TAG                     "TAG"
+#define TAG_LOG_LEVEL                   ESP_LOG_INFO
+#define TAG_TASK_LOG_TAG                "TAG_TASK"
+#define TAG_TASK_LOG_LEVEL              ESP_LOG_INFO
+
+#define ANCHOR_LOG_TAG                  "ANCHOR"
+#define ANCHOR_LOG_LEVEL                ESP_LOG_INFO
+#define ANCHOR_TASK_LOG_TAG             "ANCHOR_TASK"
+#define ANCHOR_TASK_LOG_LEVEL           ESP_LOG_INFO
+
+
+
+
 #define MASK_TXDTS            (0x00FFFFFFFE00ULL)  //The TX timestamp will snap to 8 ns resolution - mask lower 9 bits.
 
 /**

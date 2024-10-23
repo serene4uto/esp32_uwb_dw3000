@@ -6,7 +6,7 @@
  * @author Nguyen Ha Trung
  */
 
-
+#include "esp_log.h"
 
 #include "anchor.h"
 #include "deca_interface.h"
@@ -62,7 +62,7 @@ void anchor_tx_cb(const dwt_cb_data_t *txd){
         }
         pAnchorInfo->lastTxMsg = MSG_NONE;
 
-        Serial.println("Sent response message");
+        ESP_LOGI(ANCHOR_LOG_TAG, "RESP msg TX succeeded");
     }
 
 
@@ -149,6 +149,9 @@ void anchor_spi_rdy_cb(const dwt_cb_data_t *rxd){
 }
 
 error_e anchor_process_init(void) {
+
+    esp_log_level_set(ANCHOR_LOG_TAG, ESP_LOG_INFO);
+
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
 
     if(!pAnchorInfo) 
@@ -270,23 +273,18 @@ error_e anchor_process_init(void) {
 
     ANCHOR_EXIT_CRITICAL();
 
-    // print current anchor address
-    Serial.print("Current Anchor: ");
-    for(int i = 0; i < sizeof(pAnchorInfo->shortAddress.bytes); i++)
-    {
-        Serial.print(pAnchorInfo->shortAddress.bytes[i], HEX);
-        Serial.print(" ");
-    }
-    Serial.println();
+    // print current anchor address using esp log
+    ESP_LOGI(ANCHOR_LOG_TAG, "Current Anchor: %02X:%02X", 
+                pAnchorInfo->shortAddress.bytes[0], 
+                pAnchorInfo->shortAddress.bytes[1]);
 
     // print current target tag address
-    Serial.print("Current Tag: ");
-    for(int i = 0; i < sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes); i++)
-    {
-        Serial.print(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[i], HEX);
-        Serial.print(" ");
-    }
-    Serial.println();
+    ESP_LOGI(ANCHOR_LOG_TAG, "Current Tag: %02X:%02X", 
+                pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[0], 
+                pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[1]);
+
+    
+    ESP_LOGI(ANCHOR_LOG_TAG, "Anchor initialized");
 
     return _NO_ERR;
 }
@@ -295,9 +293,6 @@ void anchor_process_start(void) {
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
     
     enable_dw3000_irq();  /**< enable DW3000 IRQ to start  */
-
-    // start timer
-    // timerAttachInterrupt(hwtimer, &anchor_hw_timer_cb, true); 
 
     if(psAnchorInfo->isMaster)
     {
@@ -373,7 +368,7 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     if (ret != _NO_ERR)
     {
         //TODO: handle error
-        Serial.println("Send giving turn message error");
+        ESP_LOGE(ANCHOR_LOG_TAG, "GIVING TURN msg TX error");
     }
     
     return ret;
@@ -465,7 +460,7 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
     if (ret != _NO_ERR)
     {
         //TODO: handle error
-        Serial.println("Send response message error");
+        ESP_LOGE(ANCHOR_LOG_TAG, "RESP msg TX error");
     }
     
     return ret;
@@ -477,15 +472,6 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
     if( (pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE) && 
         (pAnchorInfo->expectedRxMsg == MSG_POLL_BROADCAST)        
     ) {
-
-        // print raw message
-        for(int i = 0; i < pRxPckt->rxDataLen; i++)
-        {
-            Serial.print(pRxPckt->msg.raw[i], HEX);
-            Serial.print(" ");
-        }
-        Serial.println();
-
         // check conditions
         if( (pRxPckt->msg.poll_broadcast_msg.msgType != MSG_POLL_BROADCAST) || 
             ( (pRxPckt->msg.poll_broadcast_msg.mac.destAddr[0] != 0xff) && 
@@ -518,12 +504,12 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
                 dwt_setrxtimeout(util_us_to_sy(ANCHOR_WAIT_POLL_BROADCAST_TIMEOUT_US));
             }
 
-            Serial.println("Error in POLL Broadcast message");
+            ESP_LOGE(ANCHOR_LOG_TAG, "POLL BROADCAST msg RX failed");
 
             return _ERR; //TODO: handle error
         }
 
-        Serial.println("POLL Broadcast received");
+        ESP_LOGI(ANCHOR_LOG_TAG, "POLL BROADCAST msg RX succeeded");
 
         pAnchorInfo->mode = anchor_info_s::RANGING_MODE; // switch to ranging mode
 
@@ -541,13 +527,6 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
         (pAnchorInfo->expectedRxMsg == MSG_END_TURN)        
     ) {
 
-        // print raw message
-        for(int i = 0; i < pRxPckt->rxDataLen; i++)
-        {
-            Serial.print(pRxPckt->msg.raw[i], HEX);
-            Serial.print(" ");
-        }
-        Serial.println();
 
         if( (pRxPckt->msg.end_turn_msg.msgType != MSG_END_TURN) || 
             (memcmp(pRxPckt->msg.end_turn_msg.mac.destAddr, 
@@ -555,10 +534,11 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
                     sizeof(pAnchorInfo->shortAddress.bytes)) != 0)
         ) {
             //TODO: Error handling
+            ESP_LOGE(ANCHOR_LOG_TAG, "END TURN msg RX failed");
             return _ERR;
         }
 
-        Serial.println("END TURN received");
+        ESP_LOGI(ANCHOR_LOG_TAG, "END TURN msg RX succeeded");
 
         // back to giving turn mode
         pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE;

@@ -85,8 +85,6 @@ tag_end_turn_task(void * arg)
 
         xSemaphoreTake(app.tagEndTurnTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
 
-        Serial.println("End Turn Task");
-
         tag_send_end_turn(pTagInfo); // send the end turn message
 
         // switch to wait for turn mode

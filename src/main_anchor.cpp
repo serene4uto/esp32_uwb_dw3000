@@ -12,9 +12,12 @@ param_block_t FConfig = DEFAULT_CONFIG;
 
 void main_anchor()
 {
+
+  esp_log_level_set(MAIN_LOG_TAG, MAIN_LOG_LEVEL);
+
   // serial
-  Serial.begin(115200);
-  while (!Serial);
+  // Serial.begin(115200);
+  // while (!Serial);
 
   // timer
   hwtimer = timerBegin(0, 80, true); // Timer 0, prescaler 80 (1 MHz frequency), count up
@@ -37,7 +40,7 @@ void main_anchor()
 
   // Initialize DW3000
   if (dwt_probe((struct dwt_probe_s *)&dw3000_probe_interf) != DWT_SUCCESS) {
-    Serial.println("Failed to probe DW3000");
+    ESP_LOGE(MAIN_LOG_TAG, "DW3000 probe failed");
     while (1);
   }
 
@@ -48,18 +51,15 @@ void main_anchor()
 
   while (!dwt_checkidlerc()) // Need to make sure DW IC is in IDLE_RC before proceeding
   {
-    Serial.println("DW IC is not in IDLE_RC state");
+    Serial.println("IDLE_RC failed");
     while (1);
   }
-  Serial.println("IDLE OK");
 
   if (dwt_initialise(DWT_DW_INIT) == DWT_ERROR)
   {
-    Serial.println("INIT FAILED");
+    ESP_LOGE(MAIN_LOG_TAG, "DW3000 init failed");
     while (1);
   }
-  Serial.println("INIT OK");
-
 
   anchor_terminate();
 

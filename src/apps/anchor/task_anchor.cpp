@@ -40,14 +40,7 @@ void anchor_master_giving_turn_task(void *arg)
         xSemaphoreTake(app.anchor_master_giving_turn_task.MutexId, portMAX_DELAY); // we do not want the task can be deleted in the middle of operation
 
         anchor_master_give_turn(pAnchorInfo);
-
-        // Serial.print("Giving turn to Tag: ");
-        // for(int i = 0; i < sizeof(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes); i++)
-        // {
-        //     Serial.print(pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[i], HEX);
-        //     Serial.print(" ");
-        // }
-        // Serial.println();
+        
     }
 }
 
