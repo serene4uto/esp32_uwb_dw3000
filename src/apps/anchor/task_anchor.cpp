@@ -11,11 +11,8 @@
 #include "anchor.h"
 #include "task_anchor.h"
 
-
-#define ANCHOR_TASK_RX_PRIO (10)
-#define ANCHOR_TASK_TOKEN_PRIO (5)
-
-#define ANCHOR_GIVING_TURN_TIMEOUT_MS (1000) 
+#define ANCHOR_TASK_RX_PRIO             (10)
+#define ANCHOR_TASK_GIVING_TURN_PRIO    (10)
 
 //-----------------------------------------------------------------------------
 portMUX_TYPE anchorTaskMux = portMUX_INITIALIZER_UNLOCKED;
@@ -74,15 +71,29 @@ void anchor_rx_task(void *arg)
 static
 void anchor_setup_tasks(void) 
 {
-    xTaskCreate(anchor_rx_task, "AnchorRxTask", 4096, NULL, ANCHOR_TASK_RX_PRIO, &app.anchor_rx_task.Handle);
+    esp_log_level_set(ANCHOR_LOG_TAG, ESP_LOG_INFO);
+
+    xTaskCreate(anchor_rx_task, 
+                "AnchorRxTask", 
+                4096, 
+                NULL, 
+                ANCHOR_TASK_RX_PRIO, 
+                &app.anchor_rx_task.Handle);
+
     app.anchor_rx_task.MutexId = xSemaphoreCreateMutex();
 
-    xTaskCreate(anchor_master_giving_turn_task, "AnchorMasterGivingTurnTask", 1024, NULL, ANCHOR_TASK_TOKEN_PRIO, &app.anchor_master_giving_turn_task.Handle);
+    xTaskCreate(anchor_master_giving_turn_task, 
+                "AnchorMasterGivingTurnTask", 
+                1024, 
+                NULL, 
+                ANCHOR_TASK_GIVING_TURN_PRIO, 
+                &app.anchor_master_giving_turn_task.Handle);
+
     app.anchor_master_giving_turn_task.MutexId = xSemaphoreCreateMutex();
 
     if ((app.anchor_rx_task.Handle == NULL) || (app.anchor_master_giving_turn_task.Handle == NULL))
     {
-        //TODO: handle error
+        ESP_LOGE(ANCHOR_LOG_TAG, "Failed to create Anchor tasks");
     }
 
 }

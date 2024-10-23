@@ -95,7 +95,7 @@ void anchor_rx_cb(const dwt_cb_data_t *rxd){
 }
 
 static
-void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd){
+void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd) {
 
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -104,8 +104,7 @@ void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd){
         return;
     }
 
-    if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
-    {
+    if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE) {
         // if timeout occurs, the Master Anchor gives the turn to the next Tag
         pAnchorInfo->curTagIdx++;
         if (pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum)
@@ -120,18 +119,8 @@ void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd){
         }
     }
 
-    if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::RANGING_MODE)
-    {
-        // // if timeout occurs, the Master Anchor waits for the next turn
-        // pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE;
-        // pAnchorInfo->expectedRxMsg = MSG_GIVING_TURN;
-        // pAnchorInfo->lastTxMsg = MSG_NONE;
-
-        // // signal the Anchor Master giving turn task
-        // if(app.anchor_master_giving_turn_task.Handle)
-        // {
-        //     vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
-        // }
+    if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::RANGING_MODE) {
+        //TODO: ???
     }
 }
 
@@ -159,10 +148,7 @@ error_e anchor_process_init(void) {
         return(_ERR_Cannot_Alloc_Memory);
     }
 
-    /* switch off receiver's rxTimeOut, RxAfterTxDelay, delayedRxTime,
-     * autoRxEnable, dblBufferMode and autoACK,
-     * clear all initial counters, etc.
-     * */
+    // clear the anchor info
     memset(pAnchorInfo, 0, sizeof(anchor_info_t));
 
 
@@ -173,7 +159,6 @@ error_e anchor_process_init(void) {
     {
         pAnchorInfo->isMaster = true;
     }
-
 
     // Hardcoded EUI64s for demo 
     // TODO: fixed later
@@ -192,13 +177,11 @@ error_e anchor_process_init(void) {
 
     pAnchorInfo->panID = ANCHOR_DEFAULT_PANID;
 
-
-    /* dwt_xx calls in app level Must be in protected mode (DW3000 IRQ disabled) */
-    disable_dw3000_irq();
+    disable_dw3000_irq(); 
 
     ANCHOR_ENTER_CRITICAL();
 
-    if (dwt_initialise(DWT_DW_INIT) != DWT_SUCCESS)  /**< set callbacks to NULL inside dwt_initialise*/
+    if (dwt_initialise(DWT_DW_INIT) != DWT_SUCCESS) 
     {
         ANCHOR_EXIT_CRITICAL();
         return (_ERR_INIT);
@@ -255,7 +238,6 @@ error_e anchor_process_init(void) {
 
     /* configure non-zero initial values */
     pAnchorInfo->seqNum    = (uint8_t)(0xff*rand()/RAND_MAX);
-
 
     /*
      * The dwt_initialize will read the default XTAL TRIM from the OTP or use the DEFAULT_XTAL_TRIM.
@@ -319,7 +301,6 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     tx_pckt_t txPckt;
 
     memset(&txPckt, 0, sizeof(txPckt));
-
 
     // setup transmit params
     txPckt.psduLen = sizeof(giving_turn_msg_t);
