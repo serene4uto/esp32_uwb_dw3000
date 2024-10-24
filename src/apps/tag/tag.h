@@ -143,7 +143,7 @@ void    tag_process_terminate(void);
 error_e tag_send_blink(tag_info_t *p);
 
 error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt);
-error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt);
+error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt);
 error_e tag_send_end_turn(tag_info_t *pTagInfo);
 
 void tag_restart_for_new_turn(tag_info_t *pTagInfo);

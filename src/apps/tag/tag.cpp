@@ -18,11 +18,11 @@
 #include "util.h"
 
 
-// #define TAG_GIVING_TURN_ACK_DELAY_UUS     (1500)    /* delay before sending ACK after receiving Giving Turn message, us */
-#define TAG_TX_POLL_DELAY_UUS           (2000)                /* delay before sending POLL after receiving Giving Turn message, us */
+// #define TAG_GIVING_TURN_ACK_DELAY_UUS     (1500)           /* delay before sending ACK after receiving Giving Turn message, us */
+#define TAG_TX_POLL_DELAY_US            (9000)                /* delay before sending POLL after receiving Giving Turn message, us */
 
-#define TAG_DEFAULT_RESP_DELAY_TIME_US  (10000)          /* default response msg delay time, us */
-#define TAG_DEFAULT_RESP_TIMEOUT_US     (11000)         /* default response msg timeout, us */
+#define TAG_DEFAULT_RESP_DELAY_TIME_US  (10000)               /* default response msg delay time, us */
+#define TAG_DEFAULT_RESP_TIMEOUT_US     (11000)               /* default response msg timeout, us */
 
 #define TAG_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define TAG_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
@@ -94,66 +94,73 @@ tag_tx_cb(const dwt_cb_data_t *txd)
     }
 }
 
-/* @brief     ISR layer
- *             TWR application Rx callback
- *             to be called from dwt_isr() as an Rx call-back
- * */
-static void
-tag_rx_cb(const dwt_cb_data_t *rxd)
+static void tag_rx_cb(const dwt_cb_data_t *rxd)
 {
-    tag_info_t *pTagInfo = getTagInfoPtr();
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    tag_info_t *pTagInfo = getTagInfoPtr();
     tag_rx_pckt_t rxPckt;
 
-    if(!pTagInfo)
-    {
+    if (pTagInfo == NULL) {
         return;
     }
 
+    // Read the receive timestamp and data from the device
     dwt_readrxtimestamp(rxPckt.timeStamp);
     rxPckt.status = rxd->status;
     rxPckt.rxDataLen = rxd->datalength;
-    dwt_readrxdata(rxPckt.msg.raw, rxd->datalength, 0);
 
-    xQueueSendFromISR(pTagInfo->rxPktQueue, &rxPckt, &xHigherPriorityTaskWoken);
+    // Read the received data into the packet buffer
+    dwt_readrxdata(rxPckt.msg.raw, rxPckt.rxDataLen, 0);
 
-    if(app.tagRxTask.Handle)
-    {
+    // Send the received packet to the queue from ISR
+    if (xQueueSendFromISR(pTagInfo->rxPktQueue, &rxPckt, &xHigherPriorityTaskWoken) != pdPASS){
+        // Handle the error if the queue is full
+        // Optional: Log the event or increment a missed packet counter
+    }
+
+    // Notify the task that new data is available
+    if (app.tagRxTask.Handle != NULL) {
         vTaskNotifyGiveFromISR(app.tagRxTask.Handle, &xHigherPriorityTaskWoken);
     }
+
+    // Request a context switch if a higher-priority task was woken
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken); // -->switch to the higher priority task immediately
 }
 
-/*
- * @brief    ISR layer
- *
- * */
-static void
-tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
+static void tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
 {
     tag_info_t *pTagInfo = getTagInfoPtr();
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    if(!pTagInfo) {
+    if (pTagInfo == NULL) {
         return;
     }
 
-    if(pTagInfo->mode == tag_info_s::WAIT_FOR_TURN_MODE &&
+    // Use direct comparisons with expected mode and message for faster checks
+    if (pTagInfo->mode == tag_info_s::WAIT_FOR_TURN_MODE && 
         pTagInfo->expectedRxMsg == MSG_GIVING_TURN
     ) {
+        // Log and restart for new turn if condition met
         ESP_LOGI(TAG_LOG_TAG, "GIVING TURN RX Timeout");
         tag_restart_for_new_turn(pTagInfo);
     }
-
-    if(pTagInfo->mode == tag_info_s::RANGING_MODE && 
-        pTagInfo->expectedRxMsg == MSG_RESP
+    else if (pTagInfo->mode == tag_info_s::RANGING_MODE && 
+            pTagInfo->expectedRxMsg == MSG_RESP
     ) {
+        // Log and process RX timeout for RANGING_MODE
         ESP_LOGI(TAG_LOG_TAG, "RESP RX Timeout");
-        if(++pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
+
+        // Inline the response wait count increment and check
+        if (++pTagInfo->curRespWaitCount >= pTagInfo->curAnchorNum) {
             pTagInfo->curRespWaitCount = 0;
-            // send end turn message
+
+            // Directly notify the end turn task from the ISR
             vTaskNotifyGiveFromISR(app.tagEndTurnTask.Handle, &xHigherPriorityTaskWoken);
-        } 
+        }
     }
+
+    // Context switch if a higher-priority task was woken
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 static void
@@ -324,11 +331,11 @@ error_e tag_send_blink(tag_info_t *p)
     return ret;
 }
 
-error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
+error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt) {
     
     error_e ret = _NO_ERR;
     tx_pckt_t txPckt;
-    uint64_t u64RxTs;
+    uint64_t rxTs;
 
     memset(&txPckt, 0, sizeof(txPckt));
 
@@ -336,69 +343,63 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
     txPckt.msg.poll_broadcast_msg.mac.frameCtrl[0] = FC_1;
     txPckt.msg.poll_broadcast_msg.mac.frameCtrl[1] = FC_2_SHORT;
 
-    txPckt.msg.poll_broadcast_msg.mac.seqNum = pTagInfo->seqNum;
+    txPckt.msg.poll_broadcast_msg.mac.seqNum = pTagInfo->seqNum++;
     txPckt.msg.poll_broadcast_msg.mac.panID[0] = (uint8_t)(pTagInfo->panID & 0xff);
     txPckt.msg.poll_broadcast_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
 
-    // set the destination address as broadcast 0xFFFF
-    memset(txPckt.msg.poll_broadcast_msg.mac.destAddr, 
-        0xFF, 
-        sizeof(txPckt.msg.poll_broadcast_msg.mac.destAddr)
-    );
+    // Set the destination address as broadcast 0xFFFF
+    txPckt.msg.poll_broadcast_msg.mac.destAddr[0] = 0xFF;
+    txPckt.msg.poll_broadcast_msg.mac.destAddr[1] = 0xFF;
 
-    // set the source address
-    memcpy(txPckt.msg.poll_broadcast_msg.mac.sourceAddr, 
-        pTagInfo->shortAddress.bytes, 
-        sizeof(pTagInfo->shortAddress.bytes)
-    );
+    // Set the source address
+    txPckt.msg.poll_broadcast_msg.mac.sourceAddr[0] = pTagInfo->shortAddress.bytes[0];
+    txPckt.msg.poll_broadcast_msg.mac.sourceAddr[1] = pTagInfo->shortAddress.bytes[1];
 
-    // set the message type
+    // Set the message type
     txPckt.msg.poll_broadcast_msg.msgType = MSG_POLL_BROADCAST;
 
-    // set scheduled anchors
+    // Set scheduled anchors
     txPckt.msg.poll_broadcast_msg.numAnchors = pTagInfo->curAnchorNum;
     for (int i = 0; i < pTagInfo->curAnchorNum; i++) {
-        memcpy(txPckt.msg.poll_broadcast_msg.anchorSchedule[i].shortAddr, 
-            pTagInfo->anchorList[i].shortAddr.bytes, 
-            sizeof(pTagInfo->anchorList[i].shortAddr.bytes)
-        );
-        //TODO: dynamic response time calculation here instead of fixed value at beginning ?
+        txPckt.msg.poll_broadcast_msg.anchorSchedule[i].shortAddr[0] = pTagInfo->anchorList[i].shortAddr.bytes[0];
+        txPckt.msg.poll_broadcast_msg.anchorSchedule[i].shortAddr[1] = pTagInfo->anchorList[i].shortAddr.bytes[1];
 
-        txPckt.msg.poll_broadcast_msg.anchorSchedule[i].respTime[0] = (uint8_t)(pTagInfo->anchorList[i].respDelay & 0xff);
+        txPckt.msg.poll_broadcast_msg.anchorSchedule[i].respTime[0] = (uint8_t)(pTagInfo->anchorList[i].respDelay & 0xFF);
         txPckt.msg.poll_broadcast_msg.anchorSchedule[i].respTime[1] = (uint8_t)(pTagInfo->anchorList[i].respDelay >> 8);
     }
 
-    // set transmission parameters
-    // tx immediately --> rx immediately --> rx timeout
-    txPckt.txFlag               = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
-    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);
-    txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(TAG_DEFAULT_RESP_TIMEOUT_US); // timeout for the resp msg
+    // Set transmission parameters
+    // txPckt.txFlag              = DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED;
+    // txPckt.delayedRxTimeout_sy = (uint32_t)util_us_to_sy(TAG_DEFAULT_RESP_TIMEOUT_US);
+    txPckt.txFlag              = DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED;
+    txPckt.delayedRxTimeout_sy = 0;
+    txPckt.delayedRxTime_sy    = 0;
 
-    // calculate the delayed time to respond
-    TS2U64_MEMCPY(u64RxTs, prxPckt->timeStamp);
+    // Calculate the delayed time to respond
+    // TS2U64_MEMCPY(u64RxTs, prxPckt->timeStamp);
+    rxTs =  ((uint64_t)pRxPckt->timeStamp[4] << 32) |
+            ((uint64_t)pRxPckt->timeStamp[3] << 24) |
+            ((uint64_t)pRxPckt->timeStamp[2] << 16) |
+            ((uint64_t)pRxPckt->timeStamp[1] << 8)  |
+            pRxPckt->timeStamp[0];
 
-    // add delay
-    txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_TX_POLL_DELAY_UUS + 10000) ) >> 8; // only high 32 bits
+    // Add delay
+    txPckt.delayedTxTimeH_dt = (rxTs + util_us_to_dev_time(TAG_TX_POLL_DELAY_US)) >> 8;
 
-    pTagInfo->seqNum++;
     pTagInfo->lastTxMsg = MSG_POLL_BROADCAST;
 
-
     TAG_ENTER_CRITICAL();
-
     ret = tx_start(&txPckt);
-
     TAG_EXIT_CRITICAL();
 
-    if (ret != _NO_ERR)
-    {
+    if (ret != _NO_ERR) {
         ESP_LOGE(TAG_LOG_TAG, "Poll Broadcast TX failed");
-        // reset cycle, wait for the next turn
         tag_restart_for_new_turn(pTagInfo);
     }
     
     return ret;
 }
+
 
 error_e tag_send_end_turn(tag_info_t *pTagInfo) {
 
