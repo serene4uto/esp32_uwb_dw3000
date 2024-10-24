@@ -13,10 +13,11 @@
 #include "common_n.h"
 #include "util.h"
 
+#define ANCHOR_MAX_RX_TIMEOUT_US                            (1000000)           
 
 #define ANCHOR_MASTER_WAIT_POLL_BROADCAST_TIMEOUT_US        (1000000)           /* timeout for waiting POLL BROADCAST message, us */
 #define ANCHOR_WAIT_POLL_BROADCAST_TIMEOUT_US               (0)                 /* timeout for waiting POLL BROADCAST message, us */
-#define ANCHOR_WAIT_FINAL_MSG_TIMEOUT_US                    (1000000)           /* timeout for waiting the final message after sending the response message, us */
+// #define ANCHOR_WAIT_FINAL_MSG_TIMEOUT_US                    (1000000)           /* timeout for waiting the final message after sending the response message, us */
 
 #define ANCHOR_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define ANCHOR_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
@@ -104,31 +105,69 @@ void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd) {
         return;
     }
 
-    if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE) {
+    if(pAnchorInfo->isMaster && 
+        pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE) {
+        
+        // for both expected msg POLL_BROADCAST and END_TURN
+
         // if timeout occurs, the Master Anchor gives the turn to the next Tag
-        pAnchorInfo->curTagIdx++;
-        if (pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum)
-        {
+        if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
             pAnchorInfo->curTagIdx = 0; // reset the index
         }
 
         // signal the Anchor Master giving turn task
-        if(app.anchor_master_giving_turn_task.Handle)
-        {
+        if(app.anchor_master_giving_turn_task.Handle) {
             vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
         }
     }
 
-    if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::RANGING_MODE) {
-        //TODO: ???
+    if(pAnchorInfo->isMaster && 
+        pAnchorInfo->mode == anchor_info_s::RANGING_MODE &&
+        pAnchorInfo->expectedRxMsg == MSG_END_TURN) {
+
+        pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE;
+        pAnchorInfo->expectedRxMsg = MSG_NONE;
+        pAnchorInfo->lastTxMsg = MSG_NONE;
+
+        // if timeout occurs, the Master Anchor gives the turn to the next Tag
+        if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
+            pAnchorInfo->curTagIdx = 0; // reset the index
+        }
+
+        // signal the Anchor Master giving turn task
+        if(app.anchor_master_giving_turn_task.Handle) {
+            vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
+        }
     }
 }
 
 static
 void anchor_rx_error_cb(const dwt_cb_data_t *rxd){
 
-    //TODO: implement this function
-    anchor_rx_timeout_cb(rxd);
+    anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (!pAnchorInfo) {
+        return;
+    }
+
+    if(pAnchorInfo->isMaster && 
+        pAnchorInfo->mode == anchor_info_s::RANGING_MODE &&
+        pAnchorInfo->expectedRxMsg == MSG_END_TURN) {
+
+        pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE;
+        pAnchorInfo->expectedRxMsg = MSG_NONE;
+        pAnchorInfo->lastTxMsg = MSG_NONE;
+
+        if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
+            pAnchorInfo->curTagIdx = 0; // reset the index
+        }
+
+        // signal the Anchor Master giving turn task
+        if(app.anchor_master_giving_turn_task.Handle) {
+            vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
+        }
+    }
     
 }
 
@@ -350,6 +389,13 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     {
         //TODO: handle error
         ESP_LOGE(ANCHOR_LOG_TAG, "GIVING TURN msg TX error");
+
+        // only master anchor will handle this error
+        // set in rx with timeout as delay to the next giving turn message
+        dwt_writefastCMD(CMD_TXRXOFF);
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+        dwt_setrxtimeout(util_us_to_sy(ANCHOR_MASTER_WAIT_POLL_BROADCAST_TIMEOUT_US));
+        
     }
     
     return ret;
@@ -441,7 +487,27 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
     if (ret != _NO_ERR)
     {
         //TODO: handle error
-        ESP_LOGE(ANCHOR_LOG_TAG, "RESP msg TX error");
+        
+        if(pAnchorInfo->isMaster) {
+            ESP_LOGE(ANCHOR_LOG_TAG, "AM RESP msg TX error");
+            // start waiting for final message
+            pAnchorInfo->expectedRxMsg = MSG_END_TURN;
+            pAnchorInfo->lastTxMsg = MSG_NONE;
+            // re-enable RX with timeout
+            dwt_writefastCMD(CMD_TXRXOFF);
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            dwt_setrxtimeout(util_us_to_sy(ANCHOR_MAX_RX_TIMEOUT_US));
+        } 
+        else {
+            ESP_LOGE(ANCHOR_LOG_TAG, "A RESP msg TX error");
+            // start waiting for the next poll broadcast message
+            pAnchorInfo->expectedRxMsg = MSG_POLL_BROADCAST;
+            pAnchorInfo->lastTxMsg = MSG_NONE;
+            // re-enable RX with timeout
+            dwt_writefastCMD(CMD_TXRXOFF);
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
+            dwt_setrxtimeout(util_us_to_sy(0));
+        }
     }
     
     return ret;
@@ -507,8 +573,6 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
     if( (pAnchorInfo->mode == anchor_info_s::RANGING_MODE) && 
         (pAnchorInfo->expectedRxMsg == MSG_END_TURN)        
     ) {
-
-
         if( (pRxPckt->msg.end_turn_msg.msgType != MSG_END_TURN) || 
             (memcmp(pRxPckt->msg.end_turn_msg.mac.destAddr, 
                     pAnchorInfo->shortAddress.bytes, 
@@ -557,22 +621,4 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
 
 
 static void IRAM_ATTR anchor_hw_timer_cb() {
-    // anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
-    // BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    // if(pAnchorInfo->isMaster && pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE)
-    // {
-    //     // if timeout occurs, the Master Anchor gives the turn to the next Tag
-    //     pAnchorInfo->curTagIdx++;
-    //     if (pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum)
-    //     {
-    //         pAnchorInfo->curTagIdx = 0; // reset the index
-    //     }
-
-    //     // signal the Anchor Master giving turn task
-    //     if(app.anchor_master_giving_turn_task.Handle)
-    //     {
-    //         vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
-    //     }
-    // }
 }

@@ -14,13 +14,11 @@
 #include "tag.h"
 
 
-#define TAG_TASK_BLINK_PRIO         (5)
-#define TAG_TASK_END_TURN_PRIO      (10)
-#define TAG_TASK_RX_PRIO            (10)
+#define TAG_TASK_BLINK_PRIO             (5)
+#define TAG_TASK_END_TURN_PRIO          (10)
+#define TAG_TASK_RX_PRIO                (10)
 
-#define TAG_BLINK_PERIOD_MS            (500)    /* range init phase - Blink send period, ms */
-
-portMUX_TYPE tagTaskMux = portMUX_INITIALIZER_UNLOCKED;
+#define TAG_BLINK_PERIOD_MS             (500)    /* range init phase - Blink send period, ms */
 
 //-----------------------------------------------------------------------------
 
@@ -33,37 +31,7 @@ portMUX_TYPE tagTaskMux = portMUX_INITIALIZER_UNLOCKED;
 static void
 TagBlinkTask(void * arg)
 {
-    // tag_info_t     *pTagInfo;
-    // uint32_t notifyValue = 0;
 
-    // while(!(pTagInfo = getTagInfoPtr()))  //wait for initialisation of psTagInfo
-    // {
-    //     vTaskDelay(100);
-    // }
-
-    // while(1)
-    // {
-    //     xSemaphoreGive(app.blinkTask.MutexId);
-
-    //     ulTaskNotifyTake(pdTRUE, portMAX_DELAY); // wait for the signal
-
-    //     xSemaphoreTake(app.blinkTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
-
-    //     Serial.println("Blinking");
-
-    //     tag_send_blink(pTagInfo); // send the blink
-
-    //     /* set the next blink ms period */
-    //     uint32_t new_blink_period_ms;
-    //     new_blink_period_ms = (uint32_t)((float)((TAG_BLINK_PERIOD_MS/3.0)*rand()/RAND_MAX)); 
-    //     new_blink_period_ms += TAG_BLINK_PERIOD_MS;
-
-    //     timerAlarmDisable(hwtimer);
-    //     timerAlarmWrite(hwtimer, new_blink_period_ms*1000, false);
-    //     timerAlarmEnable(hwtimer);
-
-        
-    // }
 }
 
 
@@ -86,12 +54,6 @@ tag_end_turn_task(void * arg)
         xSemaphoreTake(app.tagEndTurnTask.MutexId, portMAX_DELAY);  //we do not want the task can be deleted in the middle of operation
 
         tag_send_end_turn(pTagInfo); // send the end turn message
-
-        // switch to wait for turn mode
-        pTagInfo->mode = tag_info_s::WAIT_FOR_TURN_MODE;
-        pTagInfo->expectedRxMsg = MSG_GIVING_TURN;
-        pTagInfo->lastTxMsg = MSG_NONE;
-        pTagInfo->curRespWaitCount = 0;
     }
 }
 
@@ -109,13 +71,6 @@ tag_rx_task(void * arg)
     {
         vTaskDelay(100);
     }
-
-
-    taskENTER_CRITICAL(&tagTaskMux);
-
-    dwt_rxenable(DWT_START_RX_IMMEDIATE);    //Start reception on the Node to wait for turn msg
-
-    taskEXIT_CRITICAL(&tagTaskMux);
 
     while(1)
     {
@@ -163,9 +118,8 @@ void tag_terminate(void)
     timerAlarmDisable(hwtimer); // stop the timer
 
     // terminate the tasks
-    // TERMINATE_STD_TASK(app.blinkTask);
-    // TERMINATE_STD_TASK(app.pollTask);
-    // TERMINATE_STD_TASK(app.rxTask);
+    TERMINATE_STD_TASK(app.tagRxTask);
+    TERMINATE_STD_TASK(app.tagEndTurnTask);
 
     tag_process_terminate();    //de-allocate Tag RAM Resources
 }
@@ -186,8 +140,6 @@ void tag_helper(void const *argument)
 
     tag_setup_tasks();
 
-    taskENTER_CRITICAL(&tagTaskMux);
-
     set_dw_spi_fast_rate();
 
     err = tag_process_init();
@@ -196,8 +148,6 @@ void tag_helper(void const *argument)
     {
         //TODO: handle error
     }
-    
-    taskEXIT_CRITICAL(&tagTaskMux);
     
     tag_process_start(); // should be called outside of the critical section
 }

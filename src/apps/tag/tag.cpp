@@ -21,8 +21,8 @@
 // #define TAG_GIVING_TURN_ACK_DELAY_UUS     (1500)    /* delay before sending ACK after receiving Giving Turn message, us */
 #define TAG_TX_POLL_DELAY_UUS           (2000)                /* delay before sending POLL after receiving Giving Turn message, us */
 
-#define TAG_DEFAULT_RESP_DELAY_TIME_US  (7000)          /* default response msg delay time, us */
-#define TAG_DEFAULT_RESP_TIMEOUT_US     (7000)         /* default response msg timeout, us */
+#define TAG_DEFAULT_RESP_DELAY_TIME_US  (10000)          /* default response msg delay time, us */
+#define TAG_DEFAULT_RESP_TIMEOUT_US     (11000)         /* default response msg timeout, us */
 
 #define TAG_ENTER_CRITICAL()  taskENTER_CRITICAL(&task_mux)
 #define TAG_EXIT_CRITICAL()   taskEXIT_CRITICAL(&task_mux)
@@ -76,8 +76,10 @@ tag_tx_cb(const dwt_cb_data_t *txd)
     if(pTagInfo->lastTxMsg == MSG_POLL_BROADCAST)
     {
         dwt_readtxtimestamp(pTagInfo->lastPollBrdcastTxTs);
+
         pTagInfo->lastTxMsg = MSG_NONE;
         pTagInfo->expectedRxMsg = MSG_RESP;
+
         if(pTagInfo->mode != tag_info_s::RANGING_MODE) {
             pTagInfo->mode = tag_info_s::RANGING_MODE;
         }
@@ -88,6 +90,7 @@ tag_tx_cb(const dwt_cb_data_t *txd)
     if(pTagInfo->lastTxMsg == MSG_END_TURN)
     {
         ESP_LOGI(TAG_LOG_TAG, "End Turn sent");
+        tag_restart_for_new_turn(pTagInfo);
     }
 }
 
@@ -134,58 +137,39 @@ tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
         return;
     }
 
-    if(pTagInfo->mode == tag_info_s::WAIT_FOR_TURN_MODE) {
-        dwt_setrxtimeout(0);
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
+    if(pTagInfo->mode == tag_info_s::WAIT_FOR_TURN_MODE &&
+        pTagInfo->expectedRxMsg == MSG_GIVING_TURN
+    ) {
+        ESP_LOGI(TAG_LOG_TAG, "GIVING TURN RX Timeout");
+        tag_restart_for_new_turn(pTagInfo);
     }
 
     if(pTagInfo->mode == tag_info_s::RANGING_MODE && 
         pTagInfo->expectedRxMsg == MSG_RESP
     ) {
-        pTagInfo->curRespWaitCount++; 
-        if(pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
+        ESP_LOGI(TAG_LOG_TAG, "RESP RX Timeout");
+        if(++pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
             pTagInfo->curRespWaitCount = 0;
-
             // send end turn message
             vTaskNotifyGiveFromISR(app.tagEndTurnTask.Handle, &xHigherPriorityTaskWoken);
-
         } 
     }
-
-    ESP_LOGI(TAG_LOG_TAG, "RX Timeout");
 }
 
 static void
 tag_rx_error_cb(const dwt_cb_data_t *rxd)
 {
-    tag_rx_timeout_cb(rxd);
-}
-
-/*
- * Called on SPI_RDY IRQ by deca_driver
- */
-static void
-tag_spi_rdy_cb(const dwt_cb_data_t *rxd)
-{
     //TODO: implement
+    ESP_LOGI(TAG_LOG_TAG, "RX Error");
 }
 
 
 //-----------------------------------------------------------------------------
 
-/* @brief     app layer
- *     RTOS independent application layer function.
- *     initialising of TWR from scratch.
- *     This MUST be executed in protected mode.
- *
- *     !!!! It is assumed DW IC is reset prior to calling this function !!!!!
- * 
- * */
 error_e tag_process_init(void)
 {
     esp_log_level_set(TAG_LOG_TAG, TAG_LOG_LEVEL);
     
-
     tag_info_t *pTagInfo = NULL;
 
     // Allocate memory for the tag_info_t structure
@@ -193,22 +177,16 @@ error_e tag_process_init(void)
 
     pTagInfo = getTagInfoPtr(); // get pointer to the tag_info_t structure
 
-    if(!pTagInfo)
-    {
+    if(!pTagInfo) {
         return(_ERR_Cannot_Alloc_Memory);
     }
 
-    /* switch off receiver's rxTimeOut, RxAfterTxDelay, delayedRxTime,
-     * autoRxEnable, dblBufferMode and autoACK,
-     * clear all initial counters, etc.
-     * */
+    // clear the structure
     memset(pTagInfo, 0 , sizeof(tag_info_t));
 
-    if(pTagInfo->rxPktQueue == NULL)
-    {
+    if(pTagInfo->rxPktQueue == NULL) {
         pTagInfo->rxPktQueue = xQueueCreate(TAG_EVENT_BUF_SIZE, sizeof(tag_rx_pckt_t));
     }
-
 
     /* Hard code the known anchors for the demo */
     pTagInfo->anchorList[0].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_MASTER_EUI16;
@@ -317,44 +295,37 @@ error_e tag_process_init(void)
 }
 
 
-/*
- * */
-void tag_process_start(void)
-{
-    enable_dw3000_irq();  /**< enable DW3000 IRQ to start  */
 
+void tag_process_start(void) {
+
+    tag_info_t *pTagInfo = getTagInfoPtr();
+    if(!pTagInfo) {
+        return;
+    }
+
+    enable_dw3000_irq();
+
+    tag_restart_for_new_turn(pTagInfo);
 }
 
-/* @brief   app level
- *          RTOS-independent application level function.
- *          deinitialize the pTwrInfo structure.
- *  This must be executed in protected mode.
- *
- * */
-void tag_process_terminate(void)
-{
-    
+
+void tag_process_terminate(void) {
+    //TODO: implement
 }
 
 
 
 //-----------------------------------------------------------------------------
 
-/* @brief
- *          TWR : DISCOVERY PHASE
- *          Tag sends Blinks, waiting for a Ranging Config message
- *
- *          application layer function
- */
 error_e tag_send_blink(tag_info_t *p)
 {
     error_e       ret;
-
 
     return ret;
 }
 
 error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
+    
     error_e ret = _NO_ERR;
     tx_pckt_t txPckt;
     uint64_t u64RxTs;
@@ -370,7 +341,10 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
     txPckt.msg.poll_broadcast_msg.mac.panID[1] = (uint8_t)(pTagInfo->panID >> 8);
 
     // set the destination address as broadcast 0xFFFF
-    memset(txPckt.msg.poll_broadcast_msg.mac.destAddr, 0xff, sizeof(txPckt.msg.poll_broadcast_msg.mac.destAddr));
+    memset(txPckt.msg.poll_broadcast_msg.mac.destAddr, 
+        0xFF, 
+        sizeof(txPckt.msg.poll_broadcast_msg.mac.destAddr)
+    );
 
     // set the source address
     memcpy(txPckt.msg.poll_broadcast_msg.mac.sourceAddr, 
@@ -404,7 +378,7 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
     TS2U64_MEMCPY(u64RxTs, prxPckt->timeStamp);
 
     // add delay
-    txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_TX_POLL_DELAY_UUS) ) >> 8; // only high 32 bits
+    txPckt.delayedTxTimeH_dt    = (u64RxTs + util_us_to_dev_time(TAG_TX_POLL_DELAY_UUS + 10000) ) >> 8; // only high 32 bits
 
     pTagInfo->seqNum++;
     pTagInfo->lastTxMsg = MSG_POLL_BROADCAST;
@@ -418,8 +392,9 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *prxPckt) {
 
     if (ret != _NO_ERR)
     {
-        //TODO: error handling
         ESP_LOGE(TAG_LOG_TAG, "Poll Broadcast TX failed");
+        // reset cycle, wait for the next turn
+        tag_restart_for_new_turn(pTagInfo);
     }
     
     return ret;
@@ -467,7 +442,7 @@ error_e tag_send_end_turn(tag_info_t *pTagInfo) {
     }
 
     // set transmission parameters
-    txPckt.txFlag = (DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+    txPckt.txFlag = (DWT_START_TX_IMMEDIATE);
     txPckt.delayedRxTime_sy = util_us_to_sy(0);
     txPckt.delayedRxTimeout_sy = util_us_to_sy(0); // no timeout
     txPckt.delayedTxTimeH_dt = util_us_to_dev_time(0);
@@ -483,11 +458,24 @@ error_e tag_send_end_turn(tag_info_t *pTagInfo) {
 
     if (ret != _NO_ERR)
     {
-        //TODO: error handling
+        // less chance to fail here because send immediately, but still need to handle error for sure
         ESP_LOGE(TAG_LOG_TAG, "END TURN msg TX failed");
+        // reset cycle, wait for the next turn
+        tag_restart_for_new_turn(pTagInfo);
     }
 
     return ret;
+}
+
+void tag_restart_for_new_turn(tag_info_t *pTagInfo) {
+    pTagInfo->mode = tag_info_s::WAIT_FOR_TURN_MODE;
+    pTagInfo->expectedRxMsg = MSG_GIVING_TURN;
+    pTagInfo->lastTxMsg = MSG_NONE;
+    pTagInfo->curRespWaitCount = 0;
+
+    dwt_writefastCMD(CMD_TXRXOFF);
+    dwt_setrxtimeout(util_us_to_sy(0));
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 }
 
 
@@ -505,7 +493,9 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
                     pTagInfo->shortAddress.bytes, 
                     sizeof(pTagInfo->shortAddress.bytes)) != 0) 
         ) {
+
             //TODO: error handling
+            ESP_LOGE(TAG_LOG_TAG, "GIVING TURN msg RX is not correct");
             dwt_writefastCMD(CMD_TXRXOFF);
             dwt_rxenable(DWT_START_RX_IMMEDIATE);
             dwt_setrxtimeout(0);
@@ -515,9 +505,8 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         ESP_LOGI(TAG_LOG_TAG, "GIVING TURN msg RX succeeded");
 
         // send broadcast poll message
-
         if (tag_send_poll_broadcast(pTagInfo, pRxPckt) != _NO_ERR) {
-            // TODO: error handling
+            // no need to handle error here, it will be handled in the function
             return _ERR;
         }
 
@@ -527,12 +516,6 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
     if ((pTagInfo->mode == tag_info_t::RANGING_MODE) && 
         (pTagInfo->expectedRxMsg == MSG_RESP)
     ) {
-        // print raw message
-        // for (int i = 0; i < pRxPckt->rxDataLen; i++) {
-        //     Serial.print(pRxPckt->msg.raw[i], HEX);
-        //     Serial.print(" ");
-        // }
-        // Serial.println();
 
         // TODO: checking if source anchor is in the list of anchors
         if ((pRxPckt->msg.resp_msg.msgType != MSG_RESP) ||
@@ -542,12 +525,19 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         ) {
             //TODO: error handling
             ESP_LOGE(TAG_LOG_TAG, "RESP message RX failed");
+
+            if(++pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
+                pTagInfo->curRespWaitCount = 0;
+                // send end turn message
+                xTaskNotifyGive(app.tagEndTurnTask.Handle);
+            }
+
             return _ERR;
         }
 
         ESP_LOGI(TAG_LOG_TAG, "RESP message RX succeeded");
 
-        //TODO: calculate the distance
+        //TODO: calculate the distance --> check this again
         uint64_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
         int32_t rtd_init, rtd_resp;
         float clockOffsetRatio;
@@ -562,23 +552,9 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         TS2U64_MEMCPY(poll_rx_ts, pRxPckt->msg.resp_msg.pollRxTs); // get anchor poll rx ts
         TS2U64_MEMCPY(resp_tx_ts, pRxPckt->msg.resp_msg.respTxTs); // get anchor resp tx ts;
 
-        // Serial.print("poll_tx_ts: ");
-        // Serial.println((uint32_t)poll_tx_ts);
-        // Serial.print("poll_rx_ts: ");
-        // Serial.println((uint32_t)poll_rx_ts);
-        // Serial.print("resp_tx_ts: ");
-        // Serial.println((uint32_t)resp_tx_ts);
-        // Serial.print("resp_rx_ts: ");
-        // Serial.println((uint32_t)resp_rx_ts);
-
         // compute time of flight and distance
         rtd_init = (uint32_t)resp_rx_ts - (uint32_t)poll_tx_ts;
         rtd_resp = (uint32_t)resp_tx_ts - (uint32_t)poll_rx_ts;
-
-        // Serial.print("rtd_init: ");
-        // Serial.println(rtd_init);
-        // Serial.print("rtd_resp: ");
-        // Serial.println(rtd_resp);
 
         double tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
         double distance = tof * SPEED_OF_LIGHT;
@@ -598,12 +574,9 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         // save the last distance 
         pTagInfo->anchorList[curAnchorIdx].lastDist = distance;
 
-        
-        // increment the response wait count when receiving a response message or timeout
+        // increment the response wait count when receiving a response message or timeout or error
         // TODO: error rx case ???
-        pTagInfo->curRespWaitCount++; 
-
-        if(pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
+        if(++pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
             //send end turn message
             pTagInfo->curRespWaitCount = 0;
 
@@ -615,31 +588,10 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
     }
 
 
-    return _NO_ERR;
+    return _ERR; // because this rx message is not recognized ??? maybe this is not necessary
 }
 
 
-
-
-
-
+//-----------------------------------------------------------------------------
 static void IRAM_ATTR tag_hw_timer_cb() {
-
-    tag_info_t *pTagInfo = getTagInfoPtr();
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    // if (pTagInfo->mode == tag_info_s::BLINKING_MODE) 
-    // {
-    //     if(app.blinkTask.Handle)
-    //     {
-    //        vTaskNotifyGiveFromISR(app.blinkTask.Handle, &xHigherPriorityTaskWoken);
-    //     }
-
-    // }
-
-
-    // Optionally, yield if the task has higher priority
-    if (xHigherPriorityTaskWoken) {
-      portYIELD_FROM_ISR();
-    }
 }
