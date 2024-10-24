@@ -54,9 +54,10 @@
 /* run-time config */
 // #define DEFAULT_NODE_ADDR           0x0001  /**< Addr16    */
 // #define DEFAULT_PANID               0xDECA  /**< PanID */
-#define DEFAULT_ANTD                (513.484f * 1e-9 / DWT_TIME_UNITS) /*Total antenna delay*/
+#define DEFAULT_ANTD                    (513.484f * 1e-9 / DWT_TIME_UNITS) /*Total antenna delay*/
 
-
+// #define DEFAULT_TX_ANT_DLY 16508
+// #define DEFAULT_RX_ANT_DLY 16508
 
 /* This configures the delay between end of Tag's Blink_TX and Tag start Rx of Ranging Config message.
  * From Node's view this is a delay between end of reception of Blink's data and start of transmission of preamble of Ranging Config.
@@ -96,8 +97,6 @@
             .power = 0xfdfdfdfdUL, \
             .PGcount = 0x0, \
         }, \
-        .rcDelay_us = DEFAULT_TAG_BLINK_TX_RC_RX_US,\
-        .rcRxTo_us  = DEFAULT_TAG_RC_RX_TIMEOUT_US,\
         .ant_rx_a   = (uint16_t)(0.5* DEFAULT_ANTD), \
         .ant_tx_a   = (uint16_t)(0.5* DEFAULT_ANTD), \
         .ant_rx_b   = (uint16_t)(0.5* DEFAULT_ANTD), \
@@ -105,6 +104,9 @@
     }, \
 }
 
+// .ant_rx_a   = (uint16_t)(0.5* DEFAULT_ANTD), \
+// .ant_tx_a   = (uint16_t)(0.5* DEFAULT_ANTD), \
+// .ant_rx_b   = (uint16_t)(0.5* DEFAULT_ANTD), \
 
 /**
  * @brief Structure representing runtime parameters.
@@ -116,9 +118,6 @@
 typedef struct runtime_params_s
 {
     dwt_txconfig_t tx_config;    /**< TX power, PG delay, TX mode configuration. */
-
-    uint32_t    rcDelay_us;     /**< Node&Tag delay between end reception of UWB blink and start transmission of UWB Ranging Config message */
-    uint16_t    rcRxTo_us;      /**< Tag's Receiver timeout only to save power on non-reception of the Ranging Config */
 
     uint16_t ant_rx_a;           /**< Antenna delay value for the left RX port. */
     uint16_t ant_tx_a;           /**< Antenna delay value for the left TX port. */

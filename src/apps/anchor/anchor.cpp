@@ -29,70 +29,55 @@ static anchor_info_t   *psAnchorInfo = &sAnchorInfo;
 static void anchor_hw_timer_cb();
 
 
-anchor_info_t * getAnchorInfoPtr(void)
-{
+anchor_info_t * getAnchorInfoPtr(void) {
     return (psAnchorInfo);
 }
 
-static
-void anchor_tx_cb(const dwt_cb_data_t *txd){
+static void anchor_tx_cb(const dwt_cb_data_t *txd){
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
-
 
     if (!pAnchorInfo) {
         return;
     }
 
     // Store the Tx timestamp of the sent packet
-    if (pAnchorInfo->lastTxMsg == MSG_GIVING_TURN)
-    {
+    if (pAnchorInfo->lastTxMsg == MSG_GIVING_TURN) {
         pAnchorInfo->expectedRxMsg = MSG_POLL_BROADCAST;  
         pAnchorInfo->lastTxMsg = MSG_NONE;
     }
-
-
-    if (pAnchorInfo->lastTxMsg == MSG_RESP)
-    {
-        if (pAnchorInfo->isMaster)
-        {
-            pAnchorInfo->expectedRxMsg = MSG_END_TURN;
-        }
-        else
-        {
-            pAnchorInfo->expectedRxMsg = MSG_POLL;
-        }
+    else if (pAnchorInfo->lastTxMsg == MSG_RESP) {
+        pAnchorInfo->expectedRxMsg = pAnchorInfo->isMaster ? MSG_END_TURN : MSG_POLL;
         pAnchorInfo->lastTxMsg = MSG_NONE;
-
-        ESP_LOGI(ANCHOR_LOG_TAG, "RESP msg TX succeeded");
     }
-
-
 }
 
-static
-void anchor_rx_cb(const dwt_cb_data_t *rxd){
-
+static void anchor_rx_cb(const dwt_cb_data_t *rxd) {
     anchor_info_t *pAnchorInfo = getAnchorInfoPtr();
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     anchor_rx_pckt_t rxPckt;
 
-    if (!pAnchorInfo) {
+    if (pAnchorInfo == NULL) {
         return;
     }
 
+    // Fast path: Read timestamp and data directly
     dwt_readrxtimestamp(rxPckt.timeStamp);
     rxPckt.status = rxd->status;
     rxPckt.rxDataLen = rxd->datalength;
 
-    dwt_readrxdata(rxPckt.msg.raw, rxd->datalength, 0);
+    dwt_readrxdata(rxPckt.msg.raw, rxPckt.rxDataLen, 0);
 
-    xQueueSendFromISR(pAnchorInfo->rxPcktQueue, &rxPckt, &xHigherPriorityTaskWoken);
+    // Send the packet to the queue, checking for queue space
+    if (xQueueSendFromISR(pAnchorInfo->rxPcktQueue, &rxPckt, &xHigherPriorityTaskWoken) != pdPASS) {
+    }
 
-    if(app.anchor_rx_task.Handle)
-    {
+    // Notify the associated task if a handle exists
+    if (app.anchor_rx_task.Handle != NULL) {
         vTaskNotifyGiveFromISR(app.anchor_rx_task.Handle, &xHigherPriorityTaskWoken);
     }
 
+    // Context switch if necessary
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 static
@@ -111,9 +96,9 @@ void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd) {
         // for both expected msg POLL_BROADCAST and END_TURN
 
         // if timeout occurs, the Master Anchor gives the turn to the next Tag
-        if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
-            pAnchorInfo->curTagIdx = 0; // reset the index
-        }
+        // if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
+        //     pAnchorInfo->curTagIdx = 0; // reset the index
+        // }
 
         // signal the Anchor Master giving turn task
         if(app.anchor_master_giving_turn_task.Handle) {
@@ -130,16 +115,19 @@ void anchor_rx_timeout_cb(const dwt_cb_data_t *rxd) {
         pAnchorInfo->lastTxMsg = MSG_NONE;
 
         // if timeout occurs, the Master Anchor gives the turn to the next Tag
-        if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
-            pAnchorInfo->curTagIdx = 0; // reset the index
-        }
+        // if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
+        //     pAnchorInfo->curTagIdx = 0; // reset the index
+        // }
 
         // signal the Anchor Master giving turn task
         if(app.anchor_master_giving_turn_task.Handle) {
             vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
         }
     }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
+
 
 static
 void anchor_rx_error_cb(const dwt_cb_data_t *rxd){
@@ -151,24 +139,28 @@ void anchor_rx_error_cb(const dwt_cb_data_t *rxd){
         return;
     }
 
-    if(pAnchorInfo->isMaster && 
-        pAnchorInfo->mode == anchor_info_s::RANGING_MODE &&
-        pAnchorInfo->expectedRxMsg == MSG_END_TURN) {
+    ESP_LOGE(ANCHOR_LOG_TAG, "RX error");
 
-        pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE;
-        pAnchorInfo->expectedRxMsg = MSG_NONE;
-        pAnchorInfo->lastTxMsg = MSG_NONE;
+    // if(pAnchorInfo->isMaster && 
+    //     pAnchorInfo->mode == anchor_info_s::RANGING_MODE &&
+    //     pAnchorInfo->expectedRxMsg == MSG_END_TURN) {
 
-        if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
-            pAnchorInfo->curTagIdx = 0; // reset the index
-        }
+    //     pAnchorInfo->mode = anchor_info_s::GIVING_TURN_MODE;
+    //     pAnchorInfo->expectedRxMsg = MSG_NONE;
+    //     pAnchorInfo->lastTxMsg = MSG_NONE;
 
-        // signal the Anchor Master giving turn task
-        if(app.anchor_master_giving_turn_task.Handle) {
-            vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
-        }
-    }
-    
+    //     // if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
+    //     //     pAnchorInfo->curTagIdx = 0; // reset the index
+    //     // }
+
+    //     // signal the Anchor Master giving turn task
+    //     if(app.anchor_master_giving_turn_task.Handle) {
+    //         vTaskNotifyGiveFromISR(app.anchor_master_giving_turn_task.Handle, &xHigherPriorityTaskWoken);
+    //     }
+    // }
+
+    // // Request a context switch if a higher-priority task was woken
+    // portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 static
@@ -299,10 +291,17 @@ error_e anchor_process_init(void) {
                 pAnchorInfo->shortAddress.bytes[0], 
                 pAnchorInfo->shortAddress.bytes[1]);
 
-    // print current target tag address
-    ESP_LOGI(ANCHOR_LOG_TAG, "Current Tag: %02X:%02X", 
-                pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[0], 
-                pAnchorInfo->tagList[pAnchorInfo->curTagIdx].bytes[1]);
+    // print tag address list
+    if(pAnchorInfo->isMaster) {
+        ESP_LOGI(ANCHOR_LOG_TAG, "Tag List:");
+        for(uint8_t i=0; i<pAnchorInfo->curTagNum; i++)
+        {
+            ESP_LOGI(ANCHOR_LOG_TAG, "Tag %d: %02X:%02X", 
+                        i, 
+                        pAnchorInfo->tagList[i].bytes[0], 
+                        pAnchorInfo->tagList[i].bytes[1]);
+        }
+    }
 
     
     ESP_LOGI(ANCHOR_LOG_TAG, "Anchor initialized");
@@ -340,6 +339,13 @@ error_e anchor_master_give_turn(anchor_info_t *pAnchorInfo)
     tx_pckt_t txPckt;
 
     memset(&txPckt, 0, sizeof(txPckt));
+
+    if (++pAnchorInfo->curTagIdx >= pAnchorInfo->curTagNum) {
+        pAnchorInfo->curTagIdx = 0; // reset the index
+    }
+
+    // print the current tag index
+    ESP_LOGI(ANCHOR_LOG_TAG, "Current Tag Index: %d", pAnchorInfo->curTagIdx);
 
     // setup transmit params
     txPckt.psduLen = sizeof(giving_turn_msg_t);
@@ -407,6 +413,8 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
     uint64_t pollBroadcastRxTs = 0;
     uint16_t respDelay = 0;
     uint64_t respTxTs = 0;
+    uint16_t maxDelay = 0;
+    uint16_t minDelay = 0;
 
     memset(&txPckt, 0, sizeof(txPckt));
 
@@ -447,36 +455,48 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
     txPckt.msg.resp_msg.msgType = MSG_RESP;
     memcpy(txPckt.msg.resp_msg.pollRxTs, pRxPckt->timeStamp, sizeof(pRxPckt->timeStamp));
 
+    // calculate the delayed time to respond
+    pollBroadcastRxTs = ((uint64_t)pRxPckt->timeStamp[4] << 32) |
+                        ((uint64_t)pRxPckt->timeStamp[3] << 24) |
+                        ((uint64_t)pRxPckt->timeStamp[2] << 16) |
+                        ((uint64_t)pRxPckt->timeStamp[1] << 8)  |
+                        pRxPckt->timeStamp[0];
+
     // set transmission parameters
     // tx immediately --> rx immediately --> rx timeout
-    txPckt.txFlag               = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
-    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(0);   // TX to RX delay
+    txPckt.txFlag = ( DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED );
 
-    // calculate the delayed time to respond
-    TS2U64_MEMCPY(pollBroadcastRxTs, pRxPckt->timeStamp);
+    // get the max delay mean the last anchor in the schedule
+    maxDelay = (uint16_t)((pRxPckt->msg.poll_broadcast_msg.anchorSchedule[pRxPckt->msg.poll_broadcast_msg.numAnchors-1].respTime[1] << 8) | 
+                                pRxPckt->msg.poll_broadcast_msg.anchorSchedule[pRxPckt->msg.poll_broadcast_msg.numAnchors-1].respTime[0]);
+    // get the min delay mean the first anchor in the schedule
+    minDelay = (uint16_t)((pRxPckt->msg.poll_broadcast_msg.anchorSchedule[0].respTime[1] << 8) | 
+                                pRxPckt->msg.poll_broadcast_msg.anchorSchedule[0].respTime[0]);
+
+    if(pAnchorInfo->isMaster) {
+        // RX timeout for end turn message = longest delay + guard time
+        txPckt.delayedRxTimeout_sy = (uint32_t)util_us_to_sy(minDelay * 3 );   // TODO: estimate 
+    } else{
+        txPckt.delayedRxTimeout_sy  = 0;   // no RX timeout, just wait for the next poll broadcast
+    }
+
+    // calculate the delayed time to reenable RX --> = guard time + longest delay - response delay
+    txPckt.delayedRxTime_sy     = (uint32_t)util_us_to_sy(1000 + maxDelay - respDelay);   // TX to RX delay
     txPckt.delayedTxTimeH_dt    = (pollBroadcastRxTs + util_us_to_dev_time(respDelay) ) >> 8; // only high 32 bits
 
+    // calculate the response tx time to add to the message
     respTxTs = (((uint64_t)(txPckt.delayedTxTimeH_dt & 0xFFFFFFFEUL)) << 8) + app.pConfig->runtime_params.ant_tx_a;
-    for(int i = 0; i < sizeof(txPckt.msg.resp_msg.respTxTs); i++)
-    {
+    for(int i = 0; i < sizeof(txPckt.msg.resp_msg.respTxTs); i++) {
         txPckt.msg.resp_msg.respTxTs[i] = (uint8_t)(respTxTs >> (i*8));
-    }
-
-    if(pAnchorInfo->isMaster)
-    {
-        // get the last delay time
-        uint16_t longestDelay = (uint16_t)((pRxPckt->msg.poll_broadcast_msg.anchorSchedule[pRxPckt->msg.poll_broadcast_msg.numAnchors-1].respTime[1] << 8) | 
-                                        pRxPckt->msg.poll_broadcast_msg.anchorSchedule[pRxPckt->msg.poll_broadcast_msg.numAnchors-1].respTime[0]);
-        txPckt.delayedRxTimeout_sy = (uint32_t)util_us_to_sy(longestDelay + 7000);   // RX timeout for end turn message
-    }
-    else
-    {
-        txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(0);   // no RX timeout, just wait for the next poll broadcast
     }
 
     pAnchorInfo->seqNum++;
     pAnchorInfo->lastTxMsg = MSG_RESP;
 
+    // print transmit params
+    // ESP_LOGI(ANCHOR_LOG_TAG, "longestDelay: %d, respDelay: %d ", longestDelay, respDelay);
+    // ESP_LOGI(ANCHOR_LOG_TAG, "delayedTxTimeH_dt: %d, delayedRxTime_sy: %d, delayedRxTimeout_sy: %d", 
+    //             txPckt.delayedTxTimeH_dt, txPckt.delayedRxTime_sy, txPckt.delayedRxTimeout_sy);
 
     ANCHOR_ENTER_CRITICAL();
 
@@ -521,8 +541,8 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
     ) {
         // check conditions
         if( (pRxPckt->msg.poll_broadcast_msg.msgType != MSG_POLL_BROADCAST) || 
-            ( (pRxPckt->msg.poll_broadcast_msg.mac.destAddr[0] != 0xff) && 
-              (pRxPckt->msg.poll_broadcast_msg.mac.destAddr[1] != 0xff) )
+            ( (pRxPckt->msg.poll_broadcast_msg.mac.destAddr[0] != 0xFF) && 
+              (pRxPckt->msg.poll_broadcast_msg.mac.destAddr[1] != 0xFF) )
         ) {
             // TODO: Error handling: wait for poll broadcast again
             if(pAnchorInfo->isMaster) {
@@ -570,7 +590,8 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
     }
 
     // MSG_END_TURN
-    if( (pAnchorInfo->mode == anchor_info_s::RANGING_MODE) && 
+    if( pAnchorInfo->isMaster &&
+        (pAnchorInfo->mode == anchor_info_s::RANGING_MODE) && 
         (pAnchorInfo->expectedRxMsg == MSG_END_TURN)        
     ) {
         if( (pRxPckt->msg.end_turn_msg.msgType != MSG_END_TURN) || 
@@ -594,6 +615,8 @@ error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRx
 
         return _NO_ERR;
     }
+
+    ESP_LOGE(ANCHOR_LOG_TAG, "No message matched");
 
     // no message matched 
     if(pAnchorInfo->isMaster) {

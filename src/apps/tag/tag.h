@@ -21,6 +21,8 @@
  extern "C" {
 #endif
 
+// #define TAG_ADDR_EUI16             TWR_TAG_DEV1_EUI16
+#define TAG_ADDR_EUI16             TWR_TAG_DEV2_EUI16
 
 #define TAG_DEFAULT_PANID               (0xDECA) /* default PAN ID */
 

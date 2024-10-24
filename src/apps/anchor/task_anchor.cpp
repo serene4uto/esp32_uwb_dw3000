@@ -36,6 +36,8 @@ void anchor_master_giving_turn_task(void *arg)
 
         xSemaphoreTake(app.anchor_master_giving_turn_task.MutexId, portMAX_DELAY); // we do not want the task can be deleted in the middle of operation
 
+        // vTaskDelay(pdMS_TO_TICKS(5000 + (rand() % 1000))); // delay for a random 1-2 seconds
+
         anchor_master_give_turn(pAnchorInfo);
         
     }
@@ -84,7 +86,7 @@ void anchor_setup_tasks(void)
 
     xTaskCreate(anchor_master_giving_turn_task, 
                 "AnchorMasterGivingTurnTask", 
-                1024, 
+                4096, 
                 NULL, 
                 ANCHOR_TASK_GIVING_TURN_PRIO, 
                 &app.anchor_master_giving_turn_task.Handle);
