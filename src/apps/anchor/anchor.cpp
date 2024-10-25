@@ -536,7 +536,7 @@ error_e anchor_send_resp(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt) 
 error_e anchor_process_rx_pckt(anchor_info_t *pAnchorInfo, anchor_rx_pckt_t *pRxPckt)
 {
     // MSG_POLL_BROADCAST
-    if( (pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE) && 
+    if( //(pAnchorInfo->mode == anchor_info_s::GIVING_TURN_MODE) && 
         (pAnchorInfo->expectedRxMsg == MSG_POLL_BROADCAST)        
     ) {
         // check conditions

@@ -19,7 +19,7 @@
 
 
 // #define TAG_GIVING_TURN_ACK_DELAY_UUS     (1500)           /* delay before sending ACK after receiving Giving Turn message, us */
-// #define TAG_TX_POLL_DELAY_US            (9000)                /* delay before sending POLL after receiving Giving Turn message, us */
+#define TAG_TX_POLL_DELAY_US            (9000)                /* delay before sending POLL after receiving Giving Turn message, us */
 
 #define TAG_DEFAULT_RESP_DELAY_TIME_US  (10000)                                         /* default response msg delay time, us */
 #define TAG_DEFAULT_RESP_TIMEOUT_US     (TAG_DEFAULT_RESP_DELAY_TIME_US)         /* default response msg timeout, us */
@@ -151,11 +151,15 @@ static void tag_rx_timeout_cb(const dwt_cb_data_t *rxd)
         // ESP_LOGI(TAG_LOG_TAG, "RESP RX Timeout");
 
         // Inline the response wait count increment and check
-        if (++pTagInfo->curRespWaitCount >= pTagInfo->curAnchorNum) {
+        if (++pTagInfo->curRespWaitCount == pTagInfo->curAnchorNum) {
             pTagInfo->curRespWaitCount = 0;
 
             // Directly notify the end turn task from the ISR
             vTaskNotifyGiveFromISR(app.tagEndTurnTask.Handle, &xHigherPriorityTaskWoken);
+        } else {
+            // open new rx window for response message
+            dwt_setrxtimeout(util_us_to_dev_time(TAG_DEFAULT_RESP_TIMEOUT_US));
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
         }
     }
 
@@ -168,6 +172,7 @@ tag_rx_error_cb(const dwt_cb_data_t *rxd)
 {
     //TODO: implement
     ESP_LOGI(TAG_LOG_TAG, "RX Error");
+    tag_restart_for_new_turn(getTagInfoPtr());
 }
 
 
@@ -196,11 +201,11 @@ error_e tag_process_init(void)
     }
 
     /* Hard code the known anchors for the demo */
+    pTagInfo->curAnchorNum = 3;
     pTagInfo->anchorList[0].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_MASTER_EUI16;
-    // pTagInfo->anchorList[1].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV1_EUI16;
-    // pTagInfo->anchorList[2].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV2_EUI16;
+    pTagInfo->anchorList[1].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV1_EUI16;
+    pTagInfo->anchorList[2].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV2_EUI16;
     // pTagInfo->anchorList[3].shortAddr.eui16 = (uint16_t)TWR_ANCHOR_DEV3_EUI16;
-    pTagInfo->curAnchorNum = 1;
     pTagInfo->anchorMasterIdx = 0; // index of the anchor master
 
     // fixed respDelay for each anchor
@@ -355,7 +360,7 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt) {
     
     error_e ret = _NO_ERR;
     tx_pckt_t txPckt;
-    uint64_t rxTs;
+    uint64_t givingTurnRxTs = 0;
 
     memset(&txPckt, 0, sizeof(txPckt));
 
@@ -389,23 +394,20 @@ error_e tag_send_poll_broadcast(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt) {
     }
 
     // Set transmission parameters
-    // txPckt.txFlag              = DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED;
+    // givingTurnRxTs = ((uint64_t)pRxPckt->timeStamp[4] << 32) |
+    //                  ((uint64_t)pRxPckt->timeStamp[3] << 24) |
+    //                  ((uint64_t)pRxPckt->timeStamp[2] << 16) |
+    //                  ((uint64_t)pRxPckt->timeStamp[1] << 8)  |
+    //                  pRxPckt->timeStamp[0];
+    // txPckt.txFlag               = (DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
+    // txPckt.delayedTxTimeH_dt    = (uint32_t)((givingTurnRxTs + util_us_to_dev_time(TAG_TX_POLL_DELAY_US)) >> 8); // only high 32 bits
+    // txPckt.delayedRxTime_sy     = 0;
+    // txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(TAG_DEFAULT_RESP_TIMEOUT_US);
 
-    txPckt.txFlag               = DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED;
+    txPckt.txFlag               = (DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
     txPckt.delayedTxTimeH_dt    = 0;
     txPckt.delayedRxTime_sy     = 0;
     txPckt.delayedRxTimeout_sy  = (uint32_t)util_us_to_sy(TAG_DEFAULT_RESP_TIMEOUT_US);
-    
-    // Calculate the delayed time to respond
-    // TS2U64_MEMCPY(u64RxTs, prxPckt->timeStamp);
-    // rxTs =  ((uint64_t)pRxPckt->timeStamp[4] << 32) |
-    //         ((uint64_t)pRxPckt->timeStamp[3] << 24) |
-    //         ((uint64_t)pRxPckt->timeStamp[2] << 16) |
-    //         ((uint64_t)pRxPckt->timeStamp[1] << 8)  |
-    //         pRxPckt->timeStamp[0];
-
-    // Add delay
-    // txPckt.delayedTxTimeH_dt = (rxTs + util_us_to_dev_time(TAG_TX_POLL_DELAY_US)) >> 8;
 
     pTagInfo->lastTxMsg = MSG_POLL_BROADCAST;
 
@@ -552,6 +554,10 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
                 pTagInfo->curRespWaitCount = 0;
                 // send end turn message
                 xTaskNotifyGive(app.tagEndTurnTask.Handle);
+            } else {
+                // open new rx window for response message
+                dwt_setrxtimeout(util_us_to_dev_time(TAG_DEFAULT_RESP_TIMEOUT_US));
+                dwt_rxenable(DWT_START_RX_IMMEDIATE);
             }
 
             return _ERR;
@@ -581,7 +587,10 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
         double tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
         double distance = tof * SPEED_OF_LIGHT;
 
-        ESP_LOGI(TAG_LOG_TAG, "Distance: %f", distance);
+        ESP_LOGI(TAG_LOG_TAG, "Anchor: %02X:%02X, Distance: %f", 
+                    pRxPckt->msg.resp_msg.mac.sourceAddr[0], 
+                    pRxPckt->msg.resp_msg.mac.sourceAddr[1], 
+                    distance);
 
         // check current anchor index
         for (int i = 0; i < pTagInfo->curAnchorNum; i++) {
@@ -604,6 +613,10 @@ error_e tag_process_rx_pkt(tag_info_t *pTagInfo, tag_rx_pckt_t *pRxPckt)
 
             // send end turn message
             xTaskNotifyGive(app.tagEndTurnTask.Handle);
+        } else {
+            // open new rx window for response message
+            dwt_setrxtimeout(util_us_to_dev_time(TAG_DEFAULT_RESP_TIMEOUT_US));
+            dwt_rxenable(DWT_START_RX_IMMEDIATE);
         }
 
         return _NO_ERR;
